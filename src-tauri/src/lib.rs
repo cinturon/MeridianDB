@@ -3,9 +3,25 @@ use crate::models::AppInfo;
 mod errors;
 use crate::errors::AppError;
 mod database;
-use crate::database::{ping_sqlite, create_notes_table, db_health_check};
-use crate::models::Note;
+use crate::database::{create_notes_table, db_health_check, open_database_file, ping_sqlite};
 use crate::models::DatabaseHealth;
+use crate::models::Note;
+use std::path::PathBuf;
+
+#[tauri::command]
+fn open_database(path: &str) -> Result<DatabaseHealth, AppError> {
+    let path = PathBuf::from(path);
+    let conn = open_database_file(path).map_err(|e| AppError::Message(e.to_string()))?;
+    if conn.is_busy() {
+        Err(AppError::Message("Failed to open database connection is busy".to_string()))
+    } else {
+        Ok(DatabaseHealth::new(
+            true,
+            true,
+            Some("Database opened successfully".to_string()),
+        ))
+    }
+}
 
 #[tauri::command]
 fn create_note(title: &str, content: &str) -> Result<Note, AppError> {
@@ -18,8 +34,6 @@ fn get_database_health() -> Result<DatabaseHealth, AppError> {
     let health = db_health_check().map_err(|e| AppError::Message(e.to_string()))?;
     Ok(health)
 }
-
-
 
 #[tauri::command]
 fn ping_sqlite_command() -> Result<String, AppError> {
@@ -36,7 +50,6 @@ fn get_app_info() -> AppInfo {
     }
 }
 
-
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -49,14 +62,25 @@ fn my_command() -> String {
 
 #[tauri::command]
 fn check_database_support() -> Result<(), AppError> {
-    Err(AppError::NotImplemented("DB Not Implemented...yet".to_string()))
+    Err(AppError::NotImplemented(
+        "DB Not Implemented...yet".to_string(),
+    ))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, my_command, get_app_info, check_database_support, ping_sqlite_command, create_note, get_database_health])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            my_command,
+            get_app_info,
+            check_database_support,
+            ping_sqlite_command,
+            create_note,
+            get_database_health,
+            open_database
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -2,6 +2,7 @@ use crate::errors::AppError;
 use crate::models::Note;
 use rusqlite::Connection;
 use crate::models::DatabaseHealth;
+use std::path::PathBuf;
 
 pub fn ping_sqlite() -> Result<String, AppError> {
     let conn = Connection::open_in_memory().map_err(|e| AppError::Message(e.to_string()))?;
@@ -60,6 +61,11 @@ pub fn db_health_check() -> Result<DatabaseHealth, AppError> {
         return Ok(DatabaseHealth::new(false, false, Some("SQLite DB failed to ping".to_string())));
     }
     Ok(DatabaseHealth::new(true, true, Some("SQLite DB successfully pinged".to_string())))
+}
+
+pub fn open_database_file(path: PathBuf) -> Result<Connection, AppError> {
+    let conn = Connection::open(path).map_err(|e| AppError::Message(e.to_string()))?;
+    Ok(conn)
 }
 
 #[cfg(test)]
