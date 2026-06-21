@@ -45,7 +45,7 @@ A user action starts in the React UI. The UI calls a Tauri command. The command 
 
 MeridianDB uses SQLite because it is an embedded, file-based database—users open local `.db` files without running a separate database server, and `rusqlite` with bundled SQLite keeps the desktop app portable across platforms.
 
-**Location:** planned `src-tauri/src/database.rs` (not built yet)
+**Location:** `src-tauri/src/database.rs` (`DatabaseService`, queries, and file-backed SQLite helpers)
 
 **Responsible for:**
 - Opening SQLite connections (in-memory for tests, file paths for real databases)
@@ -58,6 +58,30 @@ MeridianDB uses SQLite because it is an embedded, file-based database—users op
 - Be invoked directly from TypeScript
 - Mix UI concerns (for example formatting a table for display—that is frontend work on data the command already returned)
 
+### DatabaseService
+
+`DatabaseService` is a small struct that gives database behavior one clear home as MeridianDB grows. It is not a framework—just a tidy workbench for related SQLite operations.
+
+**Role today:**
+- Owns a `rusqlite::Connection` opened from a filesystem path (`DatabaseService::new(path)`)
+- Exposes behavior as small methods, for example `ping_sqlite()` and `db_health_check()`
+- Returns shared models such as `DatabaseHealth` that commands serialize to the frontend
+
+**How commands use it:**
+
+```text
+invoke → command → DatabaseService::new(path) → method → Result<Model, AppError> → UI
+```
+
+Tauri commands stay thin: they construct or receive a service, call one method, and return the result. Commands such as `open_database`, `ping_sqlite_command`, and `get_database_health` delegate to `DatabaseService` instead of calling scattered free functions.
+
+**Intentionally not included yet:**
+- Traits, generics, or dependency-injection containers
+- Global or long-lived app state holding a connection across commands
+- Table browsing or schema inspection (later lessons)
+
+As more operations arrive (list tables, inspect schema), they belong on `DatabaseService` or as helpers the service calls—not duplicated in `lib.rs`.
+
 ## Models
 
 **Location:** `src-tauri/src/models.rs`
@@ -68,7 +92,7 @@ MeridianDB uses SQLite because it is an embedded, file-based database—users op
 - Keeping field names and types stable so the frontend can display results predictably
 
 **Should not:**
-- Run SQL or hold database connections
+- Run SQL or hold database connections (serializable result types only; connection-holding service code belongs in the database layer)
 - Contain UI layout or styling logic
 - Become a dumping ground for unrelated helpers—models describe data, not behavior
 
@@ -106,7 +130,7 @@ src-tauri/src/
   main.rs      # App entrypoint
   models.rs    # Shared serializable structs
   errors.rs    # Friendly app-level errors
-  database.rs  # SQLite service and queries
+  database.rs  # DatabaseService, SQLite queries, and helpers
 ```
 
 This map is intentionally small. It names where code goes before the forest gets dense—not every future feature, just enough for the next lessons to have a home.

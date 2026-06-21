@@ -2,7 +2,6 @@ use serde::{Serialize, Deserialize};
 use std::fmt::{self, Display};
 use rusqlite::Row;
 
-
 #[derive(Serialize, Deserialize)]
 pub struct AppInfo {
     pub name: String,
