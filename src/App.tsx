@@ -31,7 +31,17 @@ function App() {
   const [sqlitePing, setSQLitePing] = useState<boolean>(false);
   const [note, setNote] = useState<Note | null>(null);
   const [databaseHealth, setDatabaseHealth] = useState<DatabaseHealth | null>(null);
+  const [databaseOpen, setDatabaseOpen] = useState<boolean>(false);
 
+  async function openDatabase(path: string) {
+    try {
+      const result = await invoke("open_database", { path }) as DatabaseHealth;
+      setDatabaseOpen(result.sqlite_available as boolean);
+    } catch (err) {
+      setError(parseAppError(err));
+      setDatabaseOpen(false);
+    }
+  }
   async function getDatabaseHealth() {
     try {
       const health = await invoke("get_database_health");
@@ -111,6 +121,8 @@ function App() {
           greet();
           myCommand();
           checkDatabaseSupport();
+          openDatabase("funny_test_data.sqlite");
+
         }}
       >
         <input
@@ -150,6 +162,11 @@ function App() {
           <p>Database Health: {databaseHealth.message}</p>
           <p>SQLite Available: {databaseHealth.sqlite_available ? "Yes" : "No"}</p>
           <p>Sample Query Passed: {databaseHealth.sample_query_passed ? "Yes" : "No"}</p>
+        </>
+      )}
+      {databaseOpen && (
+        <>
+          <p>Database Open: Success</p>
         </>
       )}
     </main>
