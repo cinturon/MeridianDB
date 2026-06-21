@@ -16,7 +16,11 @@ export interface Note {
   content: string;
 }
 
-
+export interface DatabaseHealth {
+  sqlite_available: boolean;
+  sample_query_passed: boolean;
+  message: string | null;
+}
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
@@ -26,6 +30,16 @@ function App() {
   const [error, setError] = useState<AppError | null>(null);
   const [sqlitePing, setSQLitePing] = useState<boolean>(false);
   const [note, setNote] = useState<Note | null>(null);
+  const [databaseHealth, setDatabaseHealth] = useState<DatabaseHealth | null>(null);
+
+  async function getDatabaseHealth() {
+    try {
+      const health = await invoke("get_database_health");
+      setDatabaseHealth(health as DatabaseHealth);
+    } catch (err) {
+      setError(parseAppError(err));
+    }
+  }
 
   async function createNote() {
     try {
@@ -70,6 +84,7 @@ function App() {
     getAppInfo();
     pingSQLite();
     createNote();
+    getDatabaseHealth();
   }, []);
 
   return (
@@ -128,6 +143,13 @@ function App() {
         <>
           <p>Note: {note.title}</p>
           <p>Note: {note.content}</p>
+        </>
+      )}
+      {databaseHealth && (
+        <>
+          <p>Database Health: {databaseHealth.message}</p>
+          <p>SQLite Available: {databaseHealth.sqlite_available ? "Yes" : "No"}</p>
+          <p>Sample Query Passed: {databaseHealth.sample_query_passed ? "Yes" : "No"}</p>
         </>
       )}
     </main>

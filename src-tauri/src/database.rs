@@ -1,6 +1,7 @@
 use crate::errors::AppError;
 use crate::models::Note;
 use rusqlite::Connection;
+use crate::models::DatabaseHealth;
 
 pub fn ping_sqlite() -> Result<String, AppError> {
     let conn = Connection::open_in_memory().map_err(|e| AppError::Message(e.to_string()))?;
@@ -51,4 +52,12 @@ pub fn create_notes_table(title: &str, content: &str) -> Result<Note, AppError> 
         .map_err(|e| AppError::Message(e.to_string()))?;
 
     Ok(note)
+}
+
+pub fn db_health_check() -> Result<DatabaseHealth, AppError> {
+    let health = ping_sqlite().map_err(|e| AppError::Message(e.to_string()))?;
+    if health != "1" {
+        return Ok(DatabaseHealth::new(false, false, Some("SQLite DB failed to ping".to_string())));
+    }
+    Ok(DatabaseHealth::new(true, true, Some("SQLite DB successfully pinged".to_string())))
 }
