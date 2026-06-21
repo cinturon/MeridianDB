@@ -1,5 +1,6 @@
 use serde::{Serialize, Deserialize};
 use std::fmt::{self, Display};
+use rusqlite::Row;
 
 
 #[derive(Serialize, Deserialize)]
@@ -19,6 +20,15 @@ pub struct Note {
 impl Note {
     pub fn new(id: i32, title: String, content: String) -> Self {
         Self { id, title, content }
+    }
+
+    //Maps a notes query row into a Note struct by column index.
+    pub fn from_row(row: &Row) -> Result<Self, rusqlite::Error> {
+        Ok(Self {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            content: row.get(2)?,
+        })
     }
 }
 

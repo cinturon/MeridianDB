@@ -39,16 +39,13 @@ pub fn create_notes_table(title: &str, content: &str) -> Result<Note, AppError> 
         return Err(AppError::Message("Failed to insert note".to_string()));
     }
 
+    
     let note = conn
         .query_row(
             "SELECT id, title, content FROM notes WHERE title = ?",
             [title],
             |row| {
-                Ok(Note::new(
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                ))
+                Note::from_row(row)
             },
         )
         .map_err(|e| AppError::Message(e.to_string()))?;
