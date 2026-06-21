@@ -37,3 +37,23 @@ impl Display for Note {
         write!(f, "Note {{ id: {}, title: {}, content: {} }}", self.id, self.title, self.content)
     }
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct DatabaseHealth {
+    pub sqlite_available: bool,
+    pub sample_query_passed: bool,
+    pub message: Option<String>,
+}
+
+impl DatabaseHealth {
+    pub fn new(sqlite_available: bool, sample_query_passed: bool, message: Option<String>) -> Self {
+        Self { sqlite_available, sample_query_passed, message }
+    }
+}
+
+impl Display for DatabaseHealth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "DatabaseHealth {{ sqlite_available: {}, sample_query_passed: {}, message: {:?} }}", self.sqlite_available, self.sample_query_passed, self.message)
+    }
+}
+
