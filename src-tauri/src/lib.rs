@@ -3,6 +3,16 @@ use crate::models::AppInfo;
 mod errors;
 use crate::errors::AppError;
 
+#[cfg(test)]
+mod sqlite_smoke {
+    use rusqlite::Connection;
+
+    #[test]
+    fn can_open_in_memory_connection() {
+        let _ = Connection::open_in_memory().expect("in-memory SQLite should open");
+    }
+}
+
 #[tauri::command]
 fn get_app_info() -> AppInfo {
     AppInfo {
