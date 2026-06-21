@@ -56,7 +56,7 @@ A user action starts in the React UI. The UI calls a Tauri command. The command 
 
 ## Models
 
-**Location:** planned `src-tauri/src/models.rs` (not built yet)
+**Location:** `src-tauri/src/models.rs`
 
 **Responsible for:**
 - Defining shared data shapes such as `AppInfo`, `DatabaseHealth`, `TableInfo`, and `ColumnInfo`
@@ -67,6 +67,30 @@ A user action starts in the React UI. The UI calls a Tauri command. The command 
 - Run SQL or hold database connections
 - Contain UI layout or styling logic
 - Become a dumping ground for unrelated helpers—models describe data, not behavior
+
+## Errors
+
+**Location:** `src-tauri/src/errors.rs` on the backend; `src/errors.tsx` on the frontend for the matching TypeScript types
+
+**Responsible for:**
+- Defining `AppError`, an app-level enum for expected failures such as `Message(String)` and `NotImplemented(String)`
+- Serializing errors back through Tauri when a command returns `Result<T, AppError>`
+- Giving commands and services a shared vocabulary for user-facing failures instead of panicking or using `unwrap`
+
+**Should not:**
+- Represent programmer bugs (logic mistakes, index errors)—those are bugs to fix, not variants to display
+- Contain UI formatting logic; the frontend decides how to present an error message to the user
+- Swallow errors silently; callers return `Result` and let the command boundary decide what crosses into the UI
+
+### Error flow
+
+When something goes wrong in an expected way:
+
+```text
+UI → invoke("command") → Command returns Err(AppError) → serde → frontend catch → readable message
+```
+
+Commands that can fail return `Result`. On success, the UI gets the `Ok` value. On failure, `invoke` rejects and the frontend parses the serialized `AppError` variant and displays it.
 
 ## Planned Rust Layout
 
