@@ -1,0 +1,84 @@
+# MeridianDB Architecture
+
+MeridianDB is a desktop SQLite database explorer built with Tauri, Rust, React, and TypeScript. The app is split into four layers. Each layer has a clear job and a clear limit on what it should not do.
+
+## Data Flow
+
+```text
+UI → Tauri Command → Rust Service → SQLite → Rust Model → UI
+```
+
+A user action starts in the React UI. The UI calls a Tauri command. The command delegates to Rust service code (database logic). The service reads or writes SQLite and maps results into shared Rust models. Those models serialize back across the boundary to the UI.
+
+## Frontend
+
+**Location:** `src/` (for example `App.tsx`, `App.css`)
+
+**Responsible for:**
+- Rendering the database explorer UI
+- Capturing user input (paths, table selection, buttons)
+- Calling Tauri commands with `invoke`
+- Showing loading, success, error, and empty states
+
+**Should not:**
+- Open SQLite files or run SQL directly
+- Encode database rules or business logic
+- Know about Rust module layout beyond command names and typed responses
+
+## Commands
+
+**Location:** `src-tauri/src/lib.rs` today; may grow into dedicated command modules later
+
+**Responsible for:**
+- Exposing typed operations the frontend can call (`greet`, `my_command`, and future commands like `list_tables`)
+- Translating frontend requests into Rust function calls
+- Returning serializable results (strings, structs, or friendly errors) to the UI
+
+**Should not:**
+- Contain large blocks of SQL or row-mapping logic (that belongs in the database layer)
+- Render UI or manage React state
+- Grow into a catch-all file as features arrive—commands stay thin
+
+## Database
+
+**Location:** planned `src-tauri/src/database.rs` (not built yet)
+
+**Responsible for:**
+- Opening SQLite connections (in-memory for tests, file paths for real databases)
+- Running queries such as `SELECT 1`, listing tables from `sqlite_master`, and inspecting schemas with `PRAGMA table_info`
+- Mapping SQLite rows into Rust structs
+- Returning `Result` values that commands can turn into user-facing errors
+
+**Should not:**
+- Know about React components or frontend state
+- Be invoked directly from TypeScript
+- Mix UI concerns (for example formatting a table for display—that is frontend work on data the command already returned)
+
+## Models
+
+**Location:** planned `src-tauri/src/models.rs` (not built yet)
+
+**Responsible for:**
+- Defining shared data shapes such as `AppInfo`, `DatabaseHealth`, `TableInfo`, and `ColumnInfo`
+- Using `serde` so structs can cross the Tauri boundary as JSON-like values for TypeScript
+- Keeping field names and types stable so the frontend can display results predictably
+
+**Should not:**
+- Run SQL or hold database connections
+- Contain UI layout or styling logic
+- Become a dumping ground for unrelated helpers—models describe data, not behavior
+
+## Planned Rust Layout
+
+As MeridianDB grows, backend code will split along these lines:
+
+```text
+src-tauri/src/
+  lib.rs       # Tauri setup and command registration
+  main.rs      # App entrypoint
+  models.rs    # Shared serializable structs
+  errors.rs    # Friendly app-level errors
+  database.rs  # SQLite service and queries
+```
+
+This map is intentionally small. It names where code goes before the forest gets dense—not every future feature, just enough for the next lessons to have a home.
