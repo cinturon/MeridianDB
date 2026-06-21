@@ -3,7 +3,17 @@ use crate::models::AppInfo;
 mod errors;
 use crate::errors::AppError;
 mod database;
-use crate::database::ping_sqlite;
+use crate::database::{ping_sqlite, create_notes_table};
+use crate::models::Note;
+
+
+#[tauri::command]
+fn create_note(title: &str, content: &str) -> Result<Note, AppError> {
+    let note = create_notes_table(title, content).map_err(|e| AppError::Message(e.to_string()))?;
+    Ok(note)
+}
+
+
 
 #[tauri::command]
 fn ping_sqlite_command() -> Result<String, AppError> {
@@ -40,7 +50,7 @@ fn check_database_support() -> Result<(), AppError> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, my_command, get_app_info, check_database_support, ping_sqlite_command])
+        .invoke_handler(tauri::generate_handler![greet, my_command, get_app_info, check_database_support, ping_sqlite_command, create_note])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
