@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
-
+import { AppError, parseAppError, displayAppErrorMessage } from "./errors";
 
 export interface AppInfo {
   name: string;
@@ -10,12 +10,15 @@ export interface AppInfo {
   description: string;
 }
 
+
+
+
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
   const [myMsg, setMyMsg] = useState("");
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
-
+  const [error, setError] = useState<AppError | null>(null);
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
     setGreetMsg(await invoke("greet", { name }));
@@ -27,6 +30,15 @@ function App() {
 
   async function getAppInfo() {
     setAppInfo(await invoke("get_app_info"));
+  }
+
+  async function checkDatabaseSupport() {
+    try {
+      await invoke("check_database_support");
+      setError(null);
+    } catch (err) {
+      setError(parseAppError(err));
+    }
   }
 
   useEffect(() => {
@@ -56,6 +68,7 @@ function App() {
           e.preventDefault();
           greet();
           myCommand();
+          checkDatabaseSupport();
         }}
       >
         <input
@@ -72,6 +85,11 @@ function App() {
           <p>Name: {appInfo.name}</p>
           <p>Version: {appInfo.version}</p>
           <p>Description: {appInfo.description}</p>
+        </>
+      )}
+      {error && (
+        <>
+          <p>Error: {displayAppErrorMessage(error)}</p>
         </>
       )}
     </main>
