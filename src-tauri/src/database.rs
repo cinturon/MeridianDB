@@ -61,3 +61,28 @@ pub fn db_health_check() -> Result<DatabaseHealth, AppError> {
     }
     Ok(DatabaseHealth::new(true, true, Some("SQLite DB successfully pinged".to_string())))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_db_health_check() {
+        let health = db_health_check().unwrap();
+        assert!(health.sqlite_available);
+        assert!(health.sample_query_passed);
+    }
+
+    #[test]
+    fn test_ping_sqlite() {
+        let result = ping_sqlite().unwrap();
+        assert_eq!(result, "1");
+    }
+
+    #[test]
+    fn test_create_notes_table() {
+        let note = create_notes_table("Test Note", "Test Content").unwrap();
+        assert_eq!(note.title, "Test Note");
+        assert_eq!(note.content, "Test Content");
+    }
+}
