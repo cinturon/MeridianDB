@@ -1,12 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
+
+
+export interface AppInfo {
+  name: string;
+  version: string;
+  description: string;
+}
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
   const [myMsg, setMyMsg] = useState("");
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
 
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -16,6 +24,14 @@ function App() {
   async function myCommand() {
     setMyMsg(await invoke("my_command"));
   }
+
+  async function getAppInfo() {
+    setAppInfo(await invoke("get_app_info"));
+  }
+
+  useEffect(() => {
+    getAppInfo();
+  }, []);
 
   return (
     <main className="container">
@@ -51,6 +67,13 @@ function App() {
       </form>
       <p>{greetMsg}</p>
       <p>{myMsg}</p>
+      {appInfo && (
+        <>
+          <p>Name: {appInfo.name}</p>
+          <p>Version: {appInfo.version}</p>
+          <p>Description: {appInfo.description}</p>
+        </>
+      )}
     </main>
   );
 }
