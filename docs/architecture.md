@@ -41,6 +41,10 @@ A user action starts in the React UI. The UI calls a Tauri command. The command 
 
 ## Database
 
+### Why SQLite
+
+MeridianDB uses SQLite because it is an embedded, file-based database—users open local `.db` files without running a separate database server, and `rusqlite` with bundled SQLite keeps the desktop app portable across platforms.
+
 **Location:** planned `src-tauri/src/database.rs` (not built yet)
 
 **Responsible for:**
