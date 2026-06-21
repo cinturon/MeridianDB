@@ -3,24 +3,22 @@ use crate::models::AppInfo;
 mod errors;
 use crate::errors::AppError;
 mod database;
-use crate::database::{create_notes_table, db_health_check, open_database_file, ping_sqlite};
+use crate::database::create_notes_table;
+use crate::database::DatabaseService;
 use crate::models::DatabaseHealth;
 use crate::models::Note;
 use std::path::PathBuf;
 
 #[tauri::command]
 fn open_database(path: &str) -> Result<DatabaseHealth, AppError> {
-    let path = PathBuf::from(path);
-    let conn = open_database_file(path).map_err(|e| AppError::Message(e.to_string()))?;
-    if conn.is_busy() {
-        Err(AppError::Message("Failed to open database connection is busy".to_string()))
-    } else {
-        Ok(DatabaseHealth::new(
-            true,
-            true,
-            Some("Database opened successfully".to_string()),
-        ))
-    }
+    let database_service =
+        DatabaseService::new(PathBuf::from(path)).map_err(|e| AppError::Message(e.to_string()))?;
+
+    let health = database_service
+        .db_health_check()
+        .map_err(|e| AppError::Message(e.to_string()))?;
+
+    Ok(health)
 }
 
 #[tauri::command]
@@ -31,13 +29,21 @@ fn create_note(title: &str, content: &str) -> Result<Note, AppError> {
 
 #[tauri::command]
 fn get_database_health() -> Result<DatabaseHealth, AppError> {
-    let health = db_health_check().map_err(|e| AppError::Message(e.to_string()))?;
+    let database_service = DatabaseService::new(PathBuf::from("funny_test_data.sqlite"))
+        .map_err(|e| AppError::Message(e.to_string()))?;
+    let health = database_service
+        .db_health_check()
+        .map_err(|e| AppError::Message(e.to_string()))?;
     Ok(health)
 }
 
 #[tauri::command]
 fn ping_sqlite_command() -> Result<String, AppError> {
-    let result = ping_sqlite().map_err(|e| AppError::Message(e.to_string()))?;
+    let database_service = DatabaseService::new(PathBuf::from("funny_test_data.sqlite"))
+        .map_err(|e| AppError::Message(e.to_string()))?;
+    let result = database_service
+        .ping_sqlite()
+        .map_err(|e| AppError::Message(e.to_string()))?;
     Ok(result)
 }
 
