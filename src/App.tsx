@@ -10,6 +10,11 @@ export interface AppInfo {
   description: string;
 }
 
+export interface Note {
+  id: number;
+  title: string;
+  content: string;
+}
 
 
 
@@ -20,7 +25,16 @@ function App() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState<AppError | null>(null);
   const [sqlitePing, setSQLitePing] = useState<boolean>(false);
+  const [note, setNote] = useState<Note | null>(null);
 
+  async function createNote() {
+    try {
+      const note = await invoke("create_note", { title: "Test Note", content: "Test Content" });
+      setNote(note as Note);
+    } catch (err) {
+      setError(parseAppError(err));
+    }
+  }
   async function pingSQLite() {
     try {
       await invoke("ping_sqlite_command");
@@ -55,6 +69,7 @@ function App() {
   useEffect(() => {
     getAppInfo();
     pingSQLite();
+    createNote();
   }, []);
 
   return (
@@ -107,6 +122,12 @@ function App() {
       {sqlitePing && (
         <>
           <p>SQLite Ping: Success</p>
+        </>
+      )}
+      {note && (
+        <>
+          <p>Note: {note.title}</p>
+          <p>Note: {note.content}</p>
         </>
       )}
     </main>
