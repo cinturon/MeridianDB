@@ -19,6 +19,17 @@ function App() {
   const [myMsg, setMyMsg] = useState("");
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState<AppError | null>(null);
+  const [sqlitePing, setSQLitePing] = useState<boolean>(false);
+
+  async function pingSQLite() {
+    try {
+      await invoke("ping_sqlite_command");
+      setSQLitePing(true);
+    } catch (err) {
+      setError(parseAppError(err));
+      setSQLitePing(false);
+    }
+  }
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
     setGreetMsg(await invoke("greet", { name }));
@@ -43,6 +54,7 @@ function App() {
 
   useEffect(() => {
     getAppInfo();
+    pingSQLite();
   }, []);
 
   return (
@@ -90,6 +102,11 @@ function App() {
       {error && (
         <>
           <p>Error: {displayAppErrorMessage(error)}</p>
+        </>
+      )}
+      {sqlitePing && (
+        <>
+          <p>SQLite Ping: Success</p>
         </>
       )}
     </main>
