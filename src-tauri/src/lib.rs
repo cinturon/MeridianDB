@@ -7,7 +7,27 @@ use crate::database::create_notes_table;
 use crate::database::DatabaseService;
 use crate::models::DatabaseHealth;
 use crate::models::Note;
+use crate::models::TableInfo;
 use std::path::PathBuf;
+
+
+#[tauri::command]
+fn get_user_created_tables(path: &str) -> Result<Vec<TableInfo>, AppError> {
+    let database_service =
+        DatabaseService::new(PathBuf::from(path)).map_err(|e| AppError::Message(e.to_string()))?;
+    database_service
+        .get_user_created_tables()
+        .map_err(|e| AppError::Message(e.to_string()))
+}
+
+#[tauri::command]
+fn list_tables(path: &str) -> Result<Vec<TableInfo>, AppError> {
+    let database_service =
+        DatabaseService::new(PathBuf::from(path)).map_err(|e| AppError::Message(e.to_string()))?;
+    database_service
+        .list_tables()
+        .map_err(|e| AppError::Message(e.to_string()))
+}
 
 #[tauri::command]
 fn open_database(path: &str) -> Result<DatabaseHealth, AppError> {
@@ -85,7 +105,9 @@ pub fn run() {
             ping_sqlite_command,
             create_note,
             get_database_health,
-            open_database
+            open_database,
+            list_tables,
+            get_user_created_tables
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

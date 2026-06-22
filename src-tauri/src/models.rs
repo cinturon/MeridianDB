@@ -17,7 +17,6 @@ pub struct Note {
 }
 
 impl Note {
-    
     //Maps a notes query row into a Note struct by column index.
     pub fn from_row(row: &Row) -> Result<Self, rusqlite::Error> {
         Ok(Self {
@@ -53,3 +52,24 @@ impl Display for DatabaseHealth {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct TableInfo {
+    pub name: String,
+    pub table_type: String,
+}
+
+impl TableInfo {
+
+    pub fn from_row(row: &Row) -> Result<Self, rusqlite::Error> {
+        Ok(Self {
+            name: row.get(0)?,
+            table_type: row.get(1)?,
+        })
+    }
+}
+
+impl Display for TableInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TableInfo {{ name: {}, table_type: {} }}", self.name, self.table_type)
+    }
+}
