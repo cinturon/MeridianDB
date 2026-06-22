@@ -22,6 +22,11 @@ export interface DatabaseHealth {
   message: string | null;
 }
 
+export interface TableInfo {
+  name: string;
+  table_type: string;
+}
+
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
@@ -32,6 +37,16 @@ function App() {
   const [note, setNote] = useState<Note | null>(null);
   const [databaseHealth, setDatabaseHealth] = useState<DatabaseHealth | null>(null);
   const [databaseOpen, setDatabaseOpen] = useState<boolean>(false);
+  const [tables, setTables] = useState<TableInfo[] | null>(null);
+
+  async function listTables(path: string) {
+    try {
+      const tables = await invoke("list_tables", { path });
+      setTables(tables as TableInfo[]);
+    } catch (err) {
+      setError(parseAppError(err));
+    }
+  }
 
   async function openDatabase(path: string) {
     try {
@@ -122,7 +137,7 @@ function App() {
           myCommand();
           checkDatabaseSupport();
           openDatabase("funny_test_data.sqlite");
-
+          listTables("funny_test_data.sqlite");
         }}
       >
         <input
@@ -167,6 +182,16 @@ function App() {
       {databaseOpen && (
         <>
           <p>Database Open: Success</p>
+        </>
+      )}
+      {tables && (
+        <>
+          <p>Tables:</p>
+          <ul>
+            {tables.map((table) => (
+              <li key={table.name}>{table.name}</li>
+            ))}
+          </ul>
         </>
       )}
     </main>
