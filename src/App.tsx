@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
-import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
-import { AppError, parseAppError, displayAppErrorMessage } from "./errors";
+import { parseAppError, displayAppErrorMessage } from "./errors";
 
 export interface AppInfo {
   name: string;
@@ -10,190 +9,128 @@ export interface AppInfo {
   description: string;
 }
 
-export interface Note {
-  id: number;
-  title: string;
-  content: string;
-}
-
-export interface DatabaseHealth {
-  sqlite_available: boolean;
-  sample_query_passed: boolean;
-  message: string | null;
-}
-
 export interface TableInfo {
   name: string;
   table_type: string;
 }
 
+type TablesState = "idle" | "loading" | "success" | "empty" | "error";
+
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-  const [myMsg, setMyMsg] = useState("");
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
-  const [error, setError] = useState<AppError | null>(null);
-  const [sqlitePing, setSQLitePing] = useState<boolean>(false);
-  const [note, setNote] = useState<Note | null>(null);
-  const [databaseHealth, setDatabaseHealth] = useState<DatabaseHealth | null>(null);
-  const [databaseOpen, setDatabaseOpen] = useState<boolean>(false);
-  const [tables, setTables] = useState<TableInfo[] | null>(null);
-
-  async function listTables(path: string) {
-    try {
-      const tables = await invoke("list_tables", { path });
-      setTables(tables as TableInfo[]);
-    } catch (err) {
-      setError(parseAppError(err));
-    }
-  }
-
-  async function openDatabase(path: string) {
-    try {
-      const result = await invoke("open_database", { path }) as DatabaseHealth;
-      setDatabaseOpen(result.sqlite_available as boolean);
-    } catch (err) {
-      setError(parseAppError(err));
-      setDatabaseOpen(false);
-    }
-  }
-  async function getDatabaseHealth() {
-    try {
-      const health = await invoke("get_database_health");
-      setDatabaseHealth(health as DatabaseHealth);
-    } catch (err) {
-      setError(parseAppError(err));
-    }
-  }
-
-  async function createNote() {
-    try {
-      const note = await invoke("create_note", { title: "Test Note", content: "Test Content" });
-      setNote(note as Note);
-    } catch (err) {
-      setError(parseAppError(err));
-    }
-  }
-  async function pingSQLite() {
-    try {
-      await invoke("ping_sqlite_command");
-      setSQLitePing(true);
-    } catch (err) {
-      setError(parseAppError(err));
-      setSQLitePing(false);
-    }
-  }
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
-  async function myCommand() {
-    setMyMsg(await invoke("my_command"));
-  }
-
-  async function getAppInfo() {
-    setAppInfo(await invoke("get_app_info"));
-  }
-
-  async function checkDatabaseSupport() {
-    try {
-      await invoke("check_database_support");
-      setError(null);
-    } catch (err) {
-      setError(parseAppError(err));
-    }
-  }
+  const [databasePath, setDatabasePath] = useState("");
+  const [tables, setTables] = useState<TableInfo[]>([]);
+  const [tablesState, setTablesState] = useState<TablesState>("idle");
+  const [tablesError, setTablesError] = useState<string | null>(null);
 
   useEffect(() => {
-    getAppInfo();
-    pingSQLite();
-    createNote();
-    getDatabaseHealth();
+    invoke<AppInfo>("get_app_info").then(setAppInfo);
   }, []);
+
+  async function handleListTables(event: React.FormEvent) {
+    event.preventDefault();
+
+    const path = databasePath.trim();
+    if (!path) {
+      setTablesState("error");
+      setTablesError("Enter a path to a SQLite database file.");
+      setTables([]);
+      return;
+    }
+
+    setTablesState("loading");
+    setTablesError(null);
+
+    try {
+      const result = await invoke<TableInfo[]>("list_tables", { path });
+      setTables(result);
+
+      if (result.length === 0) {
+        setTablesState("empty");
+      } else {
+        setTablesState("success");
+      }
+    } catch (err) {
+      const parsed = parseAppError(err);
+      setTablesState("error");
+      setTablesError(
+        parsed ? displayAppErrorMessage(parsed) : "Could not list tables.",
+      );
+      setTables([]);
+    }
+  }
 
   return (
     <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+      <header className="app-header">
+        <img src="/favicon.png" className="app-logo" alt="MeridianDB logo" />
+        <div>
+          <h1>{appInfo?.name ?? "MeridianDB"}</h1>
+          {appInfo && (
+            <p className="app-subtitle">
+              v{appInfo.version} — {appInfo.description}
+            </p>
+          )}
+        </div>
+      </header>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+      <section className="explorer-panel" aria-labelledby="explorer-heading">
+        <h2 id="explorer-heading">Tables</h2>
+        <p className="panel-hint">
+          Open a SQLite file and list the user-created tables inside it.
+        </p>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-          myCommand();
-          checkDatabaseSupport();
-          openDatabase("funny_test_data.sqlite");
-          listTables("funny_test_data.sqlite");
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-      <p>{myMsg}</p>
-      {appInfo && (
-        <>
-          <p>Name: {appInfo.name}</p>
-          <p>Version: {appInfo.version}</p>
-          <p>Description: {appInfo.description}</p>
-        </>
-      )}
-      {error && (
-        <>
-          <p>Error: {displayAppErrorMessage(error)}</p>
-        </>
-      )}
-      {sqlitePing && (
-        <>
-          <p>SQLite Ping: Success</p>
-        </>
-      )}
-      {note && (
-        <>
-          <p>Note: {note.title}</p>
-          <p>Note: {note.content}</p>
-        </>
-      )}
-      {databaseHealth && (
-        <>
-          <p>Database Health: {databaseHealth.message}</p>
-          <p>SQLite Available: {databaseHealth.sqlite_available ? "Yes" : "No"}</p>
-          <p>Sample Query Passed: {databaseHealth.sample_query_passed ? "Yes" : "No"}</p>
-        </>
-      )}
-      {databaseOpen && (
-        <>
-          <p>Database Open: Success</p>
-        </>
-      )}
-      {tables && (
-        <>
-          <p>Tables:</p>
-          <ul>
-            {tables.map((table) => (
-              <li key={table.name}>{table.name}</li>
-            ))}
-          </ul>
-        </>
-      )}
+        <form className="path-form" onSubmit={handleListTables}>
+          <label htmlFor="database-path" className="sr-only">
+            Database path
+          </label>
+          <input
+            id="database-path"
+            type="text"
+            value={databasePath}
+            onChange={(e) => setDatabasePath(e.currentTarget.value)}
+            placeholder="e.g. funny_test_data.sqlite"
+            disabled={tablesState === "loading"}
+          />
+          <button type="submit" disabled={tablesState === "loading"}>
+            {tablesState === "loading" ? "Listing…" : "List Tables"}
+          </button>
+        </form>
+
+        <div className="tables-result" aria-live="polite">
+          {tablesState === "idle" && (
+            <p className="status-message">Enter a database path and click List Tables.</p>
+          )}
+
+          {tablesState === "loading" && (
+            <p className="status-message">Loading tables…</p>
+          )}
+
+          {tablesState === "error" && tablesError && (
+            <p className="status-message error">{tablesError}</p>
+          )}
+
+          {tablesState === "empty" && (
+            <p className="status-message">No tables found in this database.</p>
+          )}
+
+          {tablesState === "success" && (
+            <>
+              <p className="table-count">
+                {tables.length} table{tables.length === 1 ? "" : "s"} found
+              </p>
+              <ul className="table-list">
+                {tables.map((table) => (
+                  <li key={table.name}>
+                    <span className="table-name">{table.name}</span>
+                    <span className="table-type">{table.table_type}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      </section>
     </main>
   );
 }
