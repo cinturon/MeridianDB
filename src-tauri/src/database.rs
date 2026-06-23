@@ -1,10 +1,10 @@
 use crate::errors::AppError;
+use crate::models::ColumnInfo;
 use crate::models::DatabaseHealth;
 use crate::models::Note;
 use crate::models::TableInfo;
 use rusqlite::Connection;
 use std::path::PathBuf;
-
 pub struct DatabaseService {
     connection: Connection,
 }
@@ -44,6 +44,31 @@ impl DatabaseService {
             true,
             Some("SQLite DB successfully pinged".to_string()),
         ))
+    }
+
+    pub fn inspect_table_schema(&self, table_name: &str) -> Result<Vec<ColumnInfo>, AppError> {
+        let table = self.find_table_by_name(table_name)?;
+        if table.is_none() {
+            return Err(AppError::Message(format!(
+                "Table '{table_name}' not found"
+            )));
+        }
+
+        // PRAGMA table names are identifiers, not bindable values — validate first, then quote.
+        let escaped_name = table_name.replace('"', "\"\"");
+        let sql = format!("PRAGMA table_info(\"{escaped_name}\")");
+
+        let mut statement = self
+            .connection
+            .prepare(&sql)
+            .map_err(|e| AppError::Message(e.to_string()))?;
+
+        let columns = statement
+            .query_map([], ColumnInfo::from_row)
+            .map_err(|e| AppError::Message(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::Message(e.to_string()))?;
+        Ok(columns)
     }
 
     pub fn list_tables(&self) -> Result<Vec<TableInfo>, AppError> {
@@ -204,5 +229,47 @@ mod tests {
 
         let missing = database_service.find_table_by_name("ghost").unwrap();
         assert!(missing.is_none());
+    }
+
+    #[test]
+    fn test_inspect_table_schema() {
+        let database_service = in_memory_service_with_tables();
+        let columns = database_service.inspect_table_schema("notes").unwrap();
+        assert_eq!(columns.len(), 2);
+        assert_eq!(columns[0].name, "id");
+        assert_eq!(columns[0].data_type, "INTEGER");
+        assert!(columns[0].primary_key);
+        assert_eq!(columns[1].name, "title");
+        assert_eq!(columns[1].data_type, "TEXT");
+        assert!(columns[1].not_null);
+
+        let missing = database_service.inspect_table_schema("ghost");
+        assert!(missing.is_err());
+    }
+
+    #[test]
+    fn test_inspect_table_schema_from_file() {
+        let candidates = [
+            "../test_data.sqlite",
+            "test_data.sqlite",
+            "funny_test_data.sqlite",
+        ];
+        let mut opened = false;
+        for path in candidates {
+            if let Ok(database_service) = DatabaseService::new(PathBuf::from(path)) {
+                if let Ok(tables) = database_service.list_tables() {
+                    if tables.is_empty() {
+                        continue;
+                    }
+                    opened = true;
+                    let schema = database_service
+                        .inspect_table_schema(&tables[0].name)
+                        .unwrap_or_else(|e| panic!("schema failed for {}: {e}", tables[0].name));
+                    assert!(!schema.is_empty(), "expected columns for {}", tables[0].name);
+                    break;
+                }
+            }
+        }
+        assert!(opened, "could not open a sample database from known paths");
     }
 }

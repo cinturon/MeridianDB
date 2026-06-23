@@ -184,6 +184,13 @@ button:hover:not(:disabled) {
   gap: 1rem;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.table-list li.selected {
+  background: rgba(43, 127, 255, 0.12);
+  border-left: 3px solid var(--accent);
+  padding-left: calc(1rem - 3px);
 }
 
 .table-list li:last-child {
@@ -217,4 +224,64 @@ button:hover:not(:disabled) {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+.schema-panel {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.schema-panel h3 {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  color: #f1f5f9;
+}
+
+.column-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-row);
+}
+
+.column-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.column-table th,
+.column-table td {
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.column-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.column-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.column-table tbody tr:hover {
+  background: rgba(43, 127, 255, 0.04);
+}
+
+.column-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 500;
+  color: #cbd5e1;
+}
+
+.column-default {
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
 }
