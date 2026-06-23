@@ -84,8 +84,22 @@ impl DatabaseService {
         Ok(tables)
     }
 
-}
+    pub fn find_table_by_name(&self, table_name: &str) -> Result<Option<TableInfo>, AppError> {
+        let table = self.connection.query_row(
+            "SELECT name, type FROM sqlite_master
+                 WHERE type = 'table' AND name = ? AND name NOT LIKE 'sqlite_%'
+                 ORDER BY name",
+            [table_name], // Bind table_name as a value parameter — never interpolate user input into SQL.
+            TableInfo::from_row,
+        );
 
+        match table {
+            Ok(table) => Ok(Some(table)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(AppError::Message(e.to_string())),
+        }
+    }
+}
 
 pub fn create_notes_table(title: &str, content: &str) -> Result<Note, AppError> {
     let conn = Connection::open_in_memory().map_err(|e| AppError::Message(e.to_string()))?;
@@ -179,5 +193,16 @@ mod tests {
         assert_eq!(tables[0].table_type, "table");
         assert_eq!(tables[1].name, "users");
         assert_eq!(tables[1].table_type, "table");
+    }
+
+    #[test]
+    fn test_find_table_by_name() {
+        let database_service = in_memory_service_with_tables();
+        let table = database_service.find_table_by_name("notes").unwrap();
+        assert!(table.is_some());
+        assert_eq!(table.unwrap().name, "notes");
+
+        let missing = database_service.find_table_by_name("ghost").unwrap();
+        assert!(missing.is_none());
     }
 }
