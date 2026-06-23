@@ -22,10 +22,26 @@ function App() {
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [tablesState, setTablesState] = useState<TablesState>("idle");
   const [tablesError, setTablesError] = useState<string | null>(null);
+  const [selectedTable, setSelectedTable] = useState<TableInfo | null>(null);
 
   useEffect(() => {
     invoke<AppInfo>("get_app_info").then(setAppInfo);
   }, []);
+
+
+  async function findTableByName(tableName: string) {
+    try {
+      const result = await invoke<TableInfo | null>("find_table_by_name", { path: databasePath, table_name: tableName });
+      setSelectedTable(result);
+    } catch (err) {
+      const parsed = parseAppError(err);
+      setTablesState("error");
+      setTablesError(
+        parsed ? displayAppErrorMessage(parsed) : "Could not find table.",
+      );
+      setSelectedTable(null);
+    }
+  }
 
   async function handleListTables(event: React.FormEvent) {
     event.preventDefault();
@@ -121,8 +137,8 @@ function App() {
               </p>
               <ul className="table-list">
                 {tables.map((table) => (
-                  <li key={table.name}>
-                    <span className="table-name">{table.name}</span>
+                  <li onClick={() => findTableByName(table.name)} key={table.name}>
+                    <span className="table-name" >{table.name}</span>
                     <span className="table-type">{table.table_type}</span>
                   </li>
                 ))}
@@ -130,6 +146,12 @@ function App() {
             </>
           )}
         </div>
+        {selectedTable && (
+          <div className="selected-table">
+            <h3>{selectedTable.name}</h3>
+            <p>{selectedTable.table_type}</p>
+          </div>
+        )}
       </section>
     </main>
   );
