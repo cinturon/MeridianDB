@@ -8,6 +8,7 @@ use crate::database::DatabaseService;
 use crate::models::DatabaseHealth;
 use crate::models::Note;
 use crate::models::TableInfo;
+use crate::models::ColumnInfo;
 use std::path::PathBuf;
 
 #[tauri::command]
@@ -19,6 +20,14 @@ fn find_table_by_name(path: &str, table_name: &str) -> Result<Option<TableInfo>,
         .map_err(|e| AppError::Message(e.to_string()))
 }
 
+#[tauri::command]
+fn inspect_table_schema(path: &str, table_name: &str) -> Result<Vec<ColumnInfo>, AppError> {
+    let database_service =
+        DatabaseService::new(PathBuf::from(path)).map_err(|e| AppError::Message(e.to_string()))?;
+    database_service
+        .inspect_table_schema(table_name)
+        .map_err(|e| AppError::Message(e.to_string()))
+}
 
 #[tauri::command]
 fn get_user_created_tables(path: &str) -> Result<Vec<TableInfo>, AppError> {
@@ -117,7 +126,8 @@ pub fn run() {
             open_database,
             list_tables,
             get_user_created_tables,
-            find_table_by_name
+            find_table_by_name,
+            inspect_table_schema
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

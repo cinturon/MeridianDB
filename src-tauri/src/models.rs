@@ -1,6 +1,6 @@
-use serde::{Serialize, Deserialize};
-use std::fmt::{self, Display};
 use rusqlite::Row;
+use serde::{Deserialize, Serialize};
+use std::fmt::{self, Display};
 
 #[derive(Serialize, Deserialize)]
 pub struct AppInfo {
@@ -29,7 +29,11 @@ impl Note {
 
 impl Display for Note {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Note {{ id: {}, title: {}, content: {} }}", self.id, self.title, self.content)
+        write!(
+            f,
+            "Note {{ id: {}, title: {}, content: {} }}",
+            self.id, self.title, self.content
+        )
     }
 }
 
@@ -42,13 +46,21 @@ pub struct DatabaseHealth {
 
 impl DatabaseHealth {
     pub fn new(sqlite_available: bool, sample_query_passed: bool, message: Option<String>) -> Self {
-        Self { sqlite_available, sample_query_passed, message }
+        Self {
+            sqlite_available,
+            sample_query_passed,
+            message,
+        }
     }
 }
 
 impl Display for DatabaseHealth {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "DatabaseHealth {{ sqlite_available: {}, sample_query_passed: {}, message: {:?} }}", self.sqlite_available, self.sample_query_passed, self.message)
+        write!(
+            f,
+            "DatabaseHealth {{ sqlite_available: {}, sample_query_passed: {}, message: {:?} }}",
+            self.sqlite_available, self.sample_query_passed, self.message
+        )
     }
 }
 
@@ -59,7 +71,6 @@ pub struct TableInfo {
 }
 
 impl TableInfo {
-
     pub fn from_row(row: &Row) -> Result<Self, rusqlite::Error> {
         Ok(Self {
             name: row.get(0)?,
@@ -70,6 +81,43 @@ impl TableInfo {
 
 impl Display for TableInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "TableInfo {{ name: {}, table_type: {} }}", self.name, self.table_type)
+        write!(
+            f,
+            "TableInfo {{ name: {}, table_type: {} }}",
+            self.name, self.table_type
+        )
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct ColumnInfo {
+    pub cid: i64,
+    pub name: String,
+    pub data_type: String,
+    pub not_null: bool,
+    pub default_value: Option<String>,
+    pub primary_key: bool,
+}
+
+impl ColumnInfo {
+    pub fn from_row(row: &Row) -> Result<Self, rusqlite::Error> {
+
+        let not_null_flag: i32 = row.get(3)?;
+        let primary_key_flag: i32  = row.get(5)?;
+
+        Ok(Self {
+            cid: row.get(0)?,
+            name: row.get(1)?,
+            data_type: row.get(2)?,
+            not_null: not_null_flag != 0,
+            default_value: row.get(4)?,
+            primary_key: primary_key_flag != 0,
+        })
+    }
+}
+
+impl Display for ColumnInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ColumnInfo {{ cid: {}, name: {}, data_type: {}, not_null: {}, default_value: {:?}, primary_key: {} }}", self.cid, self.name, self.data_type, self.not_null, self.default_value, self.primary_key)
     }
 }

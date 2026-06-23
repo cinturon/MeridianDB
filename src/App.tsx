@@ -14,7 +14,17 @@ export interface TableInfo {
   table_type: string;
 }
 
+export interface ColumnInfo {
+  cid: number;
+  name: string;
+  data_type: string;
+  not_null: boolean;
+  default_value: string | null;
+  primary_key: boolean;
+}
+
 type TablesState = "idle" | "loading" | "success" | "empty" | "error";
+type SchemaState = "idle" | "loading" | "success" | "empty" | "error";
 
 function App() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
@@ -23,23 +33,41 @@ function App() {
   const [tablesState, setTablesState] = useState<TablesState>("idle");
   const [tablesError, setTablesError] = useState<string | null>(null);
   const [selectedTable, setSelectedTable] = useState<TableInfo | null>(null);
+  const [tableSchema, setTableSchema] = useState<ColumnInfo[]>([]);
+  const [schemaState, setSchemaState] = useState<SchemaState>("idle");
+  const [schemaError, setSchemaError] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<AppInfo>("get_app_info").then(setAppInfo);
   }, []);
 
+  async function handleSelectTable(table: TableInfo) {
+    const path = databasePath.trim();
+    if (!path) {
+      setSchemaState("error");
+      setSchemaError("Enter a database path before inspecting a table.");
+      return;
+    }
 
-  async function findTableByName(tableName: string) {
+    setSelectedTable(table);
+    setSchemaState("loading");
+    setSchemaError(null);
+    setTableSchema([]);
+
     try {
-      const result = await invoke<TableInfo | null>("find_table_by_name", { path: databasePath, table_name: tableName });
-      setSelectedTable(result);
+      const columns = await invoke<ColumnInfo[]>("inspect_table_schema", {
+        path,
+        tableName: table.name,
+      });
+      setTableSchema(columns);
+      setSchemaState(columns.length === 0 ? "empty" : "success");
     } catch (err) {
       const parsed = parseAppError(err);
-      setTablesState("error");
-      setTablesError(
-        parsed ? displayAppErrorMessage(parsed) : "Could not find table.",
+      setSchemaState("error");
+      setSchemaError(
+        parsed ? displayAppErrorMessage(parsed) : "Could not inspect table schema.",
       );
-      setSelectedTable(null);
+      setTableSchema([]);
     }
   }
 
@@ -56,16 +84,15 @@ function App() {
 
     setTablesState("loading");
     setTablesError(null);
+    setSelectedTable(null);
+    setTableSchema([]);
+    setSchemaState("idle");
+    setSchemaError(null);
 
     try {
       const result = await invoke<TableInfo[]>("list_tables", { path });
       setTables(result);
-
-      if (result.length === 0) {
-        setTablesState("empty");
-      } else {
-        setTablesState("success");
-      }
+      setTablesState(result.length === 0 ? "empty" : "success");
     } catch (err) {
       const parsed = parseAppError(err);
       setTablesState("error");
@@ -93,7 +120,7 @@ function App() {
       <section className="explorer-panel" aria-labelledby="explorer-heading">
         <h2 id="explorer-heading">Tables</h2>
         <p className="panel-hint">
-          Open a SQLite file and list the user-created tables inside it.
+          Open a SQLite file, list tables, then click a table to inspect its schema.
         </p>
 
         <form className="path-form" onSubmit={handleListTables}>
@@ -105,7 +132,7 @@ function App() {
             type="text"
             value={databasePath}
             onChange={(e) => setDatabasePath(e.currentTarget.value)}
-            placeholder="e.g. funny_test_data.sqlite"
+            placeholder="e.g. ../test_data.sqlite"
             disabled={tablesState === "loading"}
           />
           <button type="submit" disabled={tablesState === "loading"}>
@@ -137,8 +164,22 @@ function App() {
               </p>
               <ul className="table-list">
                 {tables.map((table) => (
-                  <li onClick={() => findTableByName(table.name)} key={table.name}>
-                    <span className="table-name" >{table.name}</span>
+                  <li
+                    key={table.name}
+                    className={
+                      selectedTable?.name === table.name ? "selected" : undefined
+                    }
+                    onClick={() => handleSelectTable(table)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleSelectTable(table);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <span className="table-name">{table.name}</span>
                     <span className="table-type">{table.table_type}</span>
                   </li>
                 ))}
@@ -146,11 +187,56 @@ function App() {
             </>
           )}
         </div>
+
         {selectedTable && (
-          <div className="selected-table">
-            <h3>{selectedTable.name}</h3>
-            <p>{selectedTable.table_type}</p>
-          </div>
+          <section
+            className="schema-panel"
+            aria-labelledby="schema-heading"
+            aria-live="polite"
+          >
+            <h3 id="schema-heading">Schema: {selectedTable.name}</h3>
+
+            {schemaState === "loading" && (
+              <p className="status-message">Loading columns…</p>
+            )}
+
+            {schemaState === "error" && schemaError && (
+              <p className="status-message error">{schemaError}</p>
+            )}
+
+            {schemaState === "empty" && (
+              <p className="status-message">No columns found for this table.</p>
+            )}
+
+            {schemaState === "success" && (
+              <div className="column-table-wrap">
+                <table className="column-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Type</th>
+                      <th>Not null</th>
+                      <th>Primary key</th>
+                      <th>Default</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableSchema.map((column) => (
+                      <tr key={column.cid}>
+                        <td className="column-name">{column.name}</td>
+                        <td>{column.data_type}</td>
+                        <td>{column.not_null ? "Yes" : "No"}</td>
+                        <td>{column.primary_key ? "Yes" : "No"}</td>
+                        <td className="column-default">
+                          {column.default_value ?? "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         )}
       </section>
     </main>
