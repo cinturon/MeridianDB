@@ -5,6 +5,7 @@ use crate::models::Note;
 use crate::models::TableInfo;
 use rusqlite::Connection;
 use std::path::PathBuf;
+use rusqlite::Statement;
 pub struct DatabaseService {
     connection: Connection,
 }
@@ -24,7 +25,7 @@ impl DatabaseService {
         let result: i32 = self
             .connection
             .query_row("SELECT 1", [], |row| row.get(0))
-            .map_err(|e| AppError::Message(e.to_string()))?;
+            .map_err(sqlite_err)?;
         Ok(result.to_string())
     }
 
@@ -61,13 +62,13 @@ impl DatabaseService {
         let mut statement = self
             .connection
             .prepare(&sql)
-            .map_err(|e| AppError::Message(e.to_string()))?;
+            .map_err(sqlite_err)?;
 
         let columns = statement
             .query_map([], ColumnInfo::from_row)
-            .map_err(|e| AppError::Message(e.to_string()))?
+            .map_err(sqlite_err)?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| AppError::Message(e.to_string()))?;
+            .map_err(sqlite_err)?;
         Ok(columns)
     }
 
@@ -79,34 +80,22 @@ impl DatabaseService {
              WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
              ORDER BY name",
             )
-            .map_err(|e| AppError::Message(e.to_string()))?;
+            .map_err(sqlite_err)?;
 
-        let tables = statement
-            .query_map([], TableInfo::from_row)
-            .map_err(|e| AppError::Message(e.to_string()))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| AppError::Message(e.to_string()))?;
-
-        Ok(tables)
+        get_tables(&mut statement)
     }
 
     pub fn get_user_created_tables(&self) -> Result<Vec<TableInfo>, AppError> {
-        let mut statement = self
+        let mut statement: Statement = self
             .connection
             .prepare(
                 "SELECT name, type FROM sqlite_master
              WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
              ORDER BY name",
             )
-            .map_err(|e| AppError::Message(e.to_string()))?;
+            .map_err(sqlite_err)?;
 
-        let tables = statement
-            .query_map([], TableInfo::from_row)
-            .map_err(|e| AppError::Message(e.to_string()))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| AppError::Message(e.to_string()))?;
-
-        Ok(tables)
+        get_tables(&mut statement)
     }
 
     pub fn find_table_by_name(&self, table_name: &str) -> Result<Option<TableInfo>, AppError> {
@@ -121,9 +110,22 @@ impl DatabaseService {
         match table {
             Ok(table) => Ok(Some(table)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(AppError::Message(e.to_string())),
+            Err(e) => Err(sqlite_err(e)),
         }
     }
+}
+
+pub fn get_tables(statement: &mut Statement) -> Result<Vec<TableInfo>, AppError> {
+    let tables = statement
+            .query_map([], TableInfo::from_row)
+            .map_err(sqlite_err)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(sqlite_err)?;
+    Ok(tables)
+}
+
+fn sqlite_err(e: rusqlite::Error) -> AppError {
+    AppError::Message(e.to_string())
 }
 
 pub fn create_notes_table(title: &str, content: &str) -> Result<Note, AppError> {
