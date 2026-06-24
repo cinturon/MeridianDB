@@ -3,6 +3,7 @@ use crate::models::ColumnInfo;
 use crate::models::DatabaseHealth;
 use crate::models::Note;
 use crate::models::TableInfo;
+use crate::models::TablePreview;
 use rusqlite::Connection;
 use std::path::PathBuf;
 use rusqlite::Statement;
@@ -113,6 +114,41 @@ impl DatabaseService {
             Err(e) => Err(sqlite_err(e)),
         }
     }
+
+    pub fn table_preview(&self, table_name: &str) -> Result<TablePreview, AppError> {
+        let table = self.find_table_by_name(table_name)?;
+        if table.is_none() {
+            return Err(AppError::Message(format!(
+                "Table '{table_name}' not found"
+            )));
+        }
+
+        let limit = TablePreview::default().limit;
+        let columns = self.inspect_table_schema(table_name)?;
+        let column_names: Vec<String> = columns.iter().map(|column| column.name.clone()).collect();
+        let rows = self.get_table_rows(table_name, limit)?;
+
+        Ok(TablePreview::new(column_names, rows, limit))
+    }
+
+    pub fn get_table_rows(&self, table_name: &str, limit: i64) -> Result<Vec<Vec<String>>, AppError> {
+        let escaped_name = table_name.replace('"', "\"\"");
+        let sql = format!("SELECT * FROM \"{escaped_name}\" LIMIT ?");
+        let mut statement = self.connection.prepare(&sql).map_err(sqlite_err)?;
+        let rows = statement
+            .query_map([limit], |row| {
+                let mut cells = Vec::new();
+                for i in 0..row.as_ref().column_count() {
+                    let value: rusqlite::types::Value = row.get(i)?;
+                    cells.push(value_to_string(value));
+                }
+                Ok(cells)
+            })
+            .map_err(sqlite_err)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(sqlite_err)?;
+        Ok(rows)
+    }
 }
 
 pub fn get_tables(statement: &mut Statement) -> Result<Vec<TableInfo>, AppError> {
@@ -126,6 +162,16 @@ pub fn get_tables(statement: &mut Statement) -> Result<Vec<TableInfo>, AppError>
 
 fn sqlite_err(e: rusqlite::Error) -> AppError {
     AppError::Message(e.to_string())
+}
+
+fn value_to_string(value: rusqlite::types::Value) -> String {
+    match value {
+        rusqlite::types::Value::Null => "NULL".to_string(),
+        rusqlite::types::Value::Integer(i) => i.to_string(),
+        rusqlite::types::Value::Real(f) => f.to_string(),
+        rusqlite::types::Value::Text(s) => s,
+        rusqlite::types::Value::Blob(b) => format!("<blob {} bytes>", b.len()),
+    }
 }
 
 pub fn create_notes_table(title: &str, content: &str) -> Result<Note, AppError> {
@@ -273,5 +319,45 @@ mod tests {
             }
         }
         assert!(opened, "could not open a sample database from known paths");
+    }
+
+    #[test]
+    fn test_table_preview() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute(
+                "CREATE TABLE items (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    qty INTEGER NOT NULL
+                )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO items (name, qty) VALUES ('apple', 3)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO items (name, qty) VALUES ('banana', 5)",
+                [],
+            )
+            .unwrap();
+
+        let database_service = DatabaseService::from_connection(connection);
+        let preview = database_service.table_preview("items").unwrap();
+
+        assert_eq!(preview.columns, vec!["id", "name", "qty"]);
+        assert_eq!(preview.rows.len(), 2);
+        assert_eq!(preview.rows[0][1], "apple");
+        assert_eq!(preview.rows[0][2], "3");
+        assert_eq!(preview.rows[1][1], "banana");
+        assert_eq!(preview.limit, 25);
+
+        let missing = database_service.table_preview("ghost");
+        assert!(missing.is_err());
     }
 }

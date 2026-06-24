@@ -121,3 +121,34 @@ impl Display for ColumnInfo {
         write!(f, "ColumnInfo {{ cid: {}, name: {}, data_type: {}, not_null: {}, default_value: {:?}, primary_key: {} }}", self.cid, self.name, self.data_type, self.not_null, self.default_value, self.primary_key)
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct TablePreview {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+    pub limit: i64,
+}
+
+impl TablePreview {
+    pub fn new(columns: Vec<String>, rows: Vec<Vec<String>>, limit: i64) -> Self {
+        Self {
+            columns,
+            rows,
+            limit,
+        }
+    }
+}
+
+impl Default for TablePreview {
+    fn default() -> Self {
+        Self {
+            columns: Vec::new(),
+            rows: Vec::new(),
+            limit: default_limit(),
+        }
+    }
+}
+
+fn default_limit() -> i64 {
+    25
+}
