@@ -39,7 +39,7 @@ body {
 }
 
 .container {
-  max-width: 640px;
+  max-width: 720px;
   margin: 0 auto;
   padding: 2rem 1.5rem 3rem;
 }
@@ -345,4 +345,40 @@ button:hover:not(:disabled) {
 
 .preview-table tbody tr:hover {
   background: rgba(43, 127, 255, 0.04);
+}
+
+.workbench-panel {
+  margin-top: 1.5rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: left;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.workbench-panel h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+  color: #f1f5f9;
+}
+
+.query-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.query-input {
+  width: 100%;
+  min-height: 6rem;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.query-result {
+  min-height: 3rem;
 }
