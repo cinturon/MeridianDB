@@ -29,6 +29,17 @@ export interface TablePreview {
   limit: number;
 }
 
+export interface QueryResult {
+  columns: string[];
+  rows: string[][];
+  row_count: number;
+  duration_ms: number | null;
+}
+
+const DEFAULT_QUERY =
+  "SELECT name, type FROM sqlite_master WHERE type = 'table' ORDER BY name";
+
+type QueryState = "idle" | "loading" | "success" | "empty" | "error";
 type TablesState = "idle" | "loading" | "success" | "empty" | "error";
 type SchemaState = "idle" | "loading" | "success" | "empty" | "error";
 type PreviewState = "idle" | "loading" | "success" | "empty" | "error";
@@ -46,6 +57,10 @@ function App() {
   const [tablePreview, setTablePreview] = useState<TablePreview | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState>("idle");
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
+  const [queryState, setQueryState] = useState<QueryState>("idle");
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const [querySql, setQuerySql] = useState(DEFAULT_QUERY);
 
   useEffect(() => {
     invoke<AppInfo>("get_app_info").then(setAppInfo);
@@ -132,6 +147,42 @@ function App() {
         parsed ? displayAppErrorMessage(parsed) : "Could not list tables.",
       );
       setTables([]);
+    }
+  }
+
+  async function handleRunQuery(event: React.FormEvent) {
+    event.preventDefault();
+
+    const path = databasePath.trim();
+    const sql = querySql.trim();
+    if (!path) {
+      setQueryState("error");
+      setQueryError("Enter a database path before running a query.");
+      setQueryResult(null);
+      return;
+    }
+    if (!sql) {
+      setQueryState("error");
+      setQueryError("Enter a SELECT query before running.");
+      setQueryResult(null);
+      return;
+    }
+
+    setQueryState("loading");
+    setQueryError(null);
+    setQueryResult(null);
+
+    try {
+      const result = await invoke<QueryResult>("query", { path, sql });
+      setQueryResult(result);
+      setQueryState(result.row_count === 0 ? "empty" : "success");
+    } catch (err) {
+      const parsed = parseAppError(err);
+      setQueryState("error");
+      setQueryError(
+        parsed ? displayAppErrorMessage(parsed) : "Could not run query.",
+      );
+      setQueryResult(null);
     }
   }
 
@@ -320,6 +371,81 @@ function App() {
             )}
           </section>
         )}
+      </section>
+
+      <section className="workbench-panel" aria-labelledby="workbench-heading">
+        <h2 id="workbench-heading">Query</h2>
+        <p className="panel-hint">
+          Run a read-only SELECT against the open database path.
+        </p>
+
+        <form className="query-form" onSubmit={handleRunQuery}>
+          <label htmlFor="query-sql" className="sr-only">
+            SQL query
+          </label>
+          <textarea
+            id="query-sql"
+            className="query-input"
+            value={querySql}
+            onChange={(e) => setQuerySql(e.currentTarget.value)}
+            rows={4}
+            spellCheck={false}
+            disabled={queryState === "loading"}
+          />
+          <button type="submit" disabled={queryState === "loading"}>
+            {queryState === "loading" ? "Running…" : "Run Query"}
+          </button>
+        </form>
+
+        <div className="query-result" aria-live="polite">
+          {queryState === "idle" && (
+            <p className="status-message">
+              Enter SQL and click Run Query to see results.
+            </p>
+          )}
+
+          {queryState === "loading" && (
+            <p className="status-message">Running query…</p>
+          )}
+
+          {queryState === "error" && queryError && (
+            <p className="status-message error">{queryError}</p>
+          )}
+
+          {queryState === "empty" && (
+            <p className="status-message">Query returned no rows.</p>
+          )}
+
+          {queryState === "success" && queryResult && (
+            <>
+              <p className="preview-meta">
+                {queryResult.row_count} row{queryResult.row_count === 1 ? "" : "s"}
+                {queryResult.duration_ms != null &&
+                  ` · ${queryResult.duration_ms} ms`}
+              </p>
+              <div className="preview-table-wrap">
+                <table className="preview-table">
+                  <thead>
+                    <tr>
+                      {queryResult.columns.map((column) => (
+                        <th key={column}>{column}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {queryResult.rows.map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {row.map((cell, cellIndex) => (
+                          <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
       </section>
     </main>
   );

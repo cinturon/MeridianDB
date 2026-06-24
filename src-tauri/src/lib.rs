@@ -10,7 +10,17 @@ use crate::models::Note;
 use crate::models::TableInfo;
 use crate::models::ColumnInfo;
 use crate::models::TablePreview;
+use crate::models::QueryResult;
 use std::path::PathBuf;
+
+#[tauri::command]
+fn query(path: &str, sql: &str) -> Result<QueryResult, AppError> {
+    let database_service =
+        DatabaseService::new(PathBuf::from(path)).map_err(|e| AppError::Message(e.to_string()))?;
+    database_service
+        .query(sql)
+        .map_err(|e| AppError::Message(e.to_string()))
+}
 
 #[tauri::command]
 fn find_table_by_name(path: &str, table_name: &str) -> Result<Option<TableInfo>, AppError> {
@@ -138,7 +148,8 @@ pub fn run() {
             get_user_created_tables,
             find_table_by_name,
             inspect_table_schema,
-            preview_table
+            preview_table,
+            query
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

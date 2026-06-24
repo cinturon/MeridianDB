@@ -152,3 +152,37 @@ impl Default for TablePreview {
 fn default_limit() -> i64 {
     25
 }
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct QueryResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+    pub row_count: usize,
+    pub duration_ms: Option<u64>,
+}
+
+impl QueryResult {
+    pub fn new(
+        columns: Vec<String>,
+        rows: Vec<Vec<String>>,
+        duration_ms: Option<u64>,
+    ) -> Self {
+        let row_count = rows.len();
+        Self {
+            columns,
+            rows,
+            row_count,
+            duration_ms,
+        }
+    }
+}
+
+impl Display for QueryResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "QueryResult {{ columns: {:?}, row_count: {}, duration_ms: {:?} }}",
+            self.columns, self.row_count, self.duration_ms
+        )
+    }
+}

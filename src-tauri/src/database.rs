@@ -4,9 +4,11 @@ use crate::models::DatabaseHealth;
 use crate::models::Note;
 use crate::models::TableInfo;
 use crate::models::TablePreview;
+use crate::models::QueryResult;
+use std::time::Instant;
 use rusqlite::Connection;
-use std::path::PathBuf;
 use rusqlite::Statement;
+use std::path::PathBuf;
 pub struct DatabaseService {
     connection: Connection,
 }
@@ -51,19 +53,14 @@ impl DatabaseService {
     pub fn inspect_table_schema(&self, table_name: &str) -> Result<Vec<ColumnInfo>, AppError> {
         let table = self.find_table_by_name(table_name)?;
         if table.is_none() {
-            return Err(AppError::Message(format!(
-                "Table '{table_name}' not found"
-            )));
+            return Err(AppError::Message(format!("Table '{table_name}' not found")));
         }
 
         // PRAGMA table names are identifiers, not bindable values — validate first, then quote.
         let escaped_name = table_name.replace('"', "\"\"");
         let sql = format!("PRAGMA table_info(\"{escaped_name}\")");
 
-        let mut statement = self
-            .connection
-            .prepare(&sql)
-            .map_err(sqlite_err)?;
+        let mut statement = self.connection.prepare(&sql).map_err(sqlite_err)?;
 
         let columns = statement
             .query_map([], ColumnInfo::from_row)
@@ -118,9 +115,7 @@ impl DatabaseService {
     pub fn table_preview(&self, table_name: &str) -> Result<TablePreview, AppError> {
         let table = self.find_table_by_name(table_name)?;
         if table.is_none() {
-            return Err(AppError::Message(format!(
-                "Table '{table_name}' not found"
-            )));
+            return Err(AppError::Message(format!("Table '{table_name}' not found")));
         }
 
         let limit = TablePreview::default().limit;
@@ -131,7 +126,11 @@ impl DatabaseService {
         Ok(TablePreview::new(column_names, rows, limit))
     }
 
-    pub fn get_table_rows(&self, table_name: &str, limit: i64) -> Result<Vec<Vec<String>>, AppError> {
+    pub fn get_table_rows(
+        &self,
+        table_name: &str,
+        limit: i64,
+    ) -> Result<Vec<Vec<String>>, AppError> {
         let escaped_name = table_name.replace('"', "\"\"");
         let sql = format!("SELECT * FROM \"{escaped_name}\" LIMIT ?");
         let mut statement = self.connection.prepare(&sql).map_err(sqlite_err)?;
@@ -149,14 +148,52 @@ impl DatabaseService {
             .map_err(sqlite_err)?;
         Ok(rows)
     }
+
+    pub fn query(&self, sql: &str) -> Result<QueryResult, AppError> {
+        let trimmed = sql.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::Message(
+                "Enter a SELECT query before running.".to_string(),
+            ));
+        }
+        if !trimmed.to_ascii_lowercase().starts_with("select") {
+            return Err(AppError::Message(
+                "Only read-only SELECT queries are supported.".to_string(),
+            ));
+        }
+
+        let start_time = Instant::now();
+        let mut statement = self.connection.prepare(trimmed).map_err(sqlite_err)?;
+        let columns = statement
+            .column_names()
+            .iter()
+            .map(|name| name.to_string())
+            .collect();
+
+        let rows = statement
+            .query_map([], |row| {
+                let mut cells = Vec::new();
+                for i in 0..row.as_ref().column_count() {
+                    let value: rusqlite::types::Value = row.get(i)?;
+                    cells.push(value_to_string(value));
+                }
+                Ok(cells)
+            })
+            .map_err(sqlite_err)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(sqlite_err)?;
+
+        let duration_ms = start_time.elapsed().as_millis() as u64;
+        Ok(QueryResult::new(columns, rows, Some(duration_ms)))
+    }
 }
 
 pub fn get_tables(statement: &mut Statement) -> Result<Vec<TableInfo>, AppError> {
     let tables = statement
-            .query_map([], TableInfo::from_row)
-            .map_err(sqlite_err)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(sqlite_err)?;
+        .query_map([], TableInfo::from_row)
+        .map_err(sqlite_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(sqlite_err)?;
     Ok(tables)
 }
 
@@ -313,7 +350,11 @@ mod tests {
                     let schema = database_service
                         .inspect_table_schema(&tables[0].name)
                         .unwrap_or_else(|e| panic!("schema failed for {}: {e}", tables[0].name));
-                    assert!(!schema.is_empty(), "expected columns for {}", tables[0].name);
+                    assert!(
+                        !schema.is_empty(),
+                        "expected columns for {}",
+                        tables[0].name
+                    );
                     break;
                 }
             }
@@ -335,16 +376,10 @@ mod tests {
             )
             .unwrap();
         connection
-            .execute(
-                "INSERT INTO items (name, qty) VALUES ('apple', 3)",
-                [],
-            )
+            .execute("INSERT INTO items (name, qty) VALUES ('apple', 3)", [])
             .unwrap();
         connection
-            .execute(
-                "INSERT INTO items (name, qty) VALUES ('banana', 5)",
-                [],
-            )
+            .execute("INSERT INTO items (name, qty) VALUES ('banana', 5)", [])
             .unwrap();
 
         let database_service = DatabaseService::from_connection(connection);
@@ -359,5 +394,35 @@ mod tests {
 
         let missing = database_service.table_preview("ghost");
         assert!(missing.is_err());
+    }
+
+    #[test]
+    fn test_query_returns_columns_and_rows() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute(
+                "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute("INSERT INTO items (name) VALUES ('alpha')", [])
+            .unwrap();
+        connection
+            .execute("INSERT INTO items (name) VALUES ('beta')", [])
+            .unwrap();
+
+        let database_service = DatabaseService::from_connection(connection);
+        let result = database_service
+            .query("SELECT id, name FROM items ORDER BY id")
+            .unwrap();
+
+        assert_eq!(result.columns, vec!["id", "name"]);
+        assert_eq!(result.row_count, 2);
+        assert_eq!(result.rows[0][1], "alpha");
+        assert!(result.duration_ms.is_some());
+
+        let rejected = database_service.query("DELETE FROM items");
+        assert!(rejected.is_err());
     }
 }
