@@ -23,8 +23,15 @@ export interface ColumnInfo {
   primary_key: boolean;
 }
 
+export interface TablePreview {
+  columns: string[];
+  rows: string[][];
+  limit: number;
+}
+
 type TablesState = "idle" | "loading" | "success" | "empty" | "error";
 type SchemaState = "idle" | "loading" | "success" | "empty" | "error";
+type PreviewState = "idle" | "loading" | "success" | "empty" | "error";
 
 function App() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
@@ -36,6 +43,9 @@ function App() {
   const [tableSchema, setTableSchema] = useState<ColumnInfo[]>([]);
   const [schemaState, setSchemaState] = useState<SchemaState>("idle");
   const [schemaError, setSchemaError] = useState<string | null>(null);
+  const [tablePreview, setTablePreview] = useState<TablePreview | null>(null);
+  const [previewState, setPreviewState] = useState<PreviewState>("idle");
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<AppInfo>("get_app_info").then(setAppInfo);
@@ -53,6 +63,9 @@ function App() {
     setSchemaState("loading");
     setSchemaError(null);
     setTableSchema([]);
+    setPreviewState("loading");
+    setPreviewError(null);
+    setTablePreview(null);
 
     try {
       const columns = await invoke<ColumnInfo[]>("inspect_table_schema", {
@@ -68,6 +81,22 @@ function App() {
         parsed ? displayAppErrorMessage(parsed) : "Could not inspect table schema.",
       );
       setTableSchema([]);
+    }
+
+    try {
+      const preview = await invoke<TablePreview>("preview_table", {
+        path,
+        tableName: table.name,
+      });
+      setTablePreview(preview);
+      setPreviewState(preview.rows.length === 0 ? "empty" : "success");
+    } catch (err) {
+      const parsed = parseAppError(err);
+      setPreviewState("error");
+      setPreviewError(
+        parsed ? displayAppErrorMessage(parsed) : "Could not load table preview.",
+      );
+      setTablePreview(null);
     }
   }
 
@@ -88,6 +117,9 @@ function App() {
     setTableSchema([]);
     setSchemaState("idle");
     setSchemaError(null);
+    setTablePreview(null);
+    setPreviewState("idle");
+    setPreviewError(null);
 
     try {
       const result = await invoke<TableInfo[]>("list_tables", { path });
@@ -120,7 +152,7 @@ function App() {
       <section className="explorer-panel" aria-labelledby="explorer-heading">
         <h2 id="explorer-heading">Tables</h2>
         <p className="panel-hint">
-          Open a SQLite file, list tables, then click a table to inspect its schema.
+          Open a SQLite file, list tables, then click a table to inspect its schema and preview rows.
         </p>
 
         <form className="path-form" onSubmit={handleListTables}>
@@ -235,6 +267,56 @@ function App() {
                   </tbody>
                 </table>
               </div>
+            )}
+          </section>
+        )}
+
+        {selectedTable && (
+          <section
+            className="preview-panel"
+            aria-labelledby="preview-heading"
+            aria-live="polite"
+          >
+            <h3 id="preview-heading">Preview: {selectedTable.name}</h3>
+
+            {previewState === "loading" && (
+              <p className="status-message">Loading rows…</p>
+            )}
+
+            {previewState === "error" && previewError && (
+              <p className="status-message error">{previewError}</p>
+            )}
+
+            {previewState === "empty" && (
+              <p className="status-message">No rows found in this table.</p>
+            )}
+
+            {previewState === "success" && tablePreview && (
+              <>
+                <p className="preview-meta">
+                  Showing {tablePreview.rows.length} of up to {tablePreview.limit} rows
+                </p>
+                <div className="preview-table-wrap">
+                  <table className="preview-table">
+                    <thead>
+                      <tr>
+                        {tablePreview.columns.map((column) => (
+                          <th key={column}>{column}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tablePreview.rows.map((row, rowIndex) => (
+                        <tr key={rowIndex}>
+                          {row.map((cell, cellIndex) => (
+                            <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </section>
         )}
