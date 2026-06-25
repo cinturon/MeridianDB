@@ -497,4 +497,23 @@ mod tests {
             "expected parser location hint, got: {message}"
         );
     }
+
+    #[test]
+    fn test_query_populates_duration_ms() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute(
+                "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+                [],
+            )
+            .unwrap();
+
+        connection.execute("INSERT INTO items (name) VALUES ('alpha')", []).unwrap();
+    
+
+        let database_service = DatabaseService::from_connection(connection);
+        let result = database_service.query("SELECT id, name FROM items ORDER BY id").unwrap();
+        assert!(result.duration_ms.is_some());
+        assert!(result.duration_ms.unwrap() < 1000);
+    }
 }
