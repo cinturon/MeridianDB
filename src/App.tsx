@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 import { parseAppError, displayAppErrorMessage } from "./errors";
+import { DataGrid } from "./DataGrid";
 
 export interface AppInfo {
   name: string;
@@ -347,26 +348,7 @@ function App() {
                 <p className="preview-meta">
                   Showing {tablePreview.rows.length} of up to {tablePreview.limit} rows
                 </p>
-                <div className="preview-table-wrap">
-                  <table className="preview-table">
-                    <thead>
-                      <tr>
-                        {tablePreview.columns.map((column) => (
-                          <th key={column}>{column}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tablePreview.rows.map((row, rowIndex) => (
-                        <tr key={rowIndex}>
-                          {row.map((cell, cellIndex) => (
-                            <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DataGrid columns={tablePreview.columns} rows={tablePreview.rows} />
               </>
             )}
           </section>
@@ -423,26 +405,7 @@ function App() {
                 {queryResult.duration_ms != null &&
                   ` · ${queryResult.duration_ms} ms`}
               </p>
-              <div className="preview-table-wrap">
-                <table className="preview-table">
-                  <thead>
-                    <tr>
-                      {queryResult.columns.map((column) => (
-                        <th key={column}>{column}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {queryResult.rows.map((row, rowIndex) => (
-                      <tr key={rowIndex}>
-                        {row.map((cell, cellIndex) => (
-                          <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataGrid columns={queryResult.columns} rows={queryResult.rows} />
             </>
           )}
         </div>
