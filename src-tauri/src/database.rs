@@ -153,12 +153,12 @@ impl DatabaseService {
         let trimmed = sql.trim();
         if trimmed.is_empty() {
             return Err(AppError::Message(
-                "Enter a SELECT query before running.".to_string(),
+                "Query failed: Enter a SELECT query before running.".to_string(),
             ));
         }
         if !trimmed.to_ascii_lowercase().starts_with("select") {
             return Err(AppError::Message(
-                "Only read-only SELECT queries are supported.".to_string(),
+                "Query failed: Only read-only SELECT queries are supported.".to_string(),
             ));
         }
 
@@ -421,8 +421,80 @@ mod tests {
         assert_eq!(result.row_count, 2);
         assert_eq!(result.rows[0][1], "alpha");
         assert!(result.duration_ms.is_some());
+    }
 
-        let rejected = database_service.query("DELETE FROM items");
-        assert!(rejected.is_err());
+    fn query_error_message(result: Result<QueryResult, AppError>) -> String {
+        match result {
+            Ok(_) => panic!("expected query to fail"),
+            Err(AppError::Message(message)) => message,
+            Err(other) => panic!("unexpected error variant: {other}"),
+        }
+    }
+
+    #[test]
+    fn test_query_rejects_empty_sql() {
+        let database_service = in_memory_service();
+        let message = query_error_message(database_service.query(""));
+        assert_eq!(
+            message,
+            "Query failed: Enter a SELECT query before running."
+        );
+    }
+
+    #[test]
+    fn test_query_rejects_whitespace_only_sql() {
+        let database_service = in_memory_service();
+        let message = query_error_message(database_service.query("   \n\t  "));
+        assert_eq!(
+            message,
+            "Query failed: Enter a SELECT query before running."
+        );
+    }
+
+    #[test]
+    fn test_query_rejects_non_select_sql() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute(
+                "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+                [],
+            )
+            .unwrap();
+        let database_service = DatabaseService::from_connection(connection);
+
+        let delete_message = query_error_message(database_service.query("DELETE FROM items"));
+        assert_eq!(
+            delete_message,
+            "Query failed: Only read-only SELECT queries are supported."
+        );
+
+        let insert_message =
+            query_error_message(database_service.query("INSERT INTO items (name) VALUES ('x')"));
+        assert_eq!(
+            insert_message,
+            "Query failed: Only read-only SELECT queries are supported."
+        );
+    }
+
+    #[test]
+    fn test_query_surfaces_sqlite_syntax_error() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute(
+                "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+                [],
+            )
+            .unwrap();
+        let database_service = DatabaseService::from_connection(connection);
+
+        let message = query_error_message(database_service.query("SELECT FROM items"));
+        assert!(
+            message.contains("syntax error"),
+            "expected SQLite syntax detail, got: {message}"
+        );
+        assert!(
+            message.contains("FROM"),
+            "expected parser location hint, got: {message}"
+        );
     }
 }
