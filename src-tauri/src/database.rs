@@ -2,13 +2,13 @@ use crate::errors::AppError;
 use crate::models::ColumnInfo;
 use crate::models::DatabaseHealth;
 use crate::models::Note;
+use crate::models::QueryResult;
 use crate::models::TableInfo;
 use crate::models::TablePreview;
-use crate::models::QueryResult;
-use std::time::Instant;
 use rusqlite::Connection;
 use rusqlite::Statement;
 use std::path::PathBuf;
+use std::time::Instant;
 pub struct DatabaseService {
     connection: Connection,
 }
@@ -186,6 +186,26 @@ impl DatabaseService {
         let duration_ms = start_time.elapsed().as_millis() as u64;
         Ok(QueryResult::new(columns, rows, Some(duration_ms)))
     }
+
+    pub fn primary_key_column(&self, table_name: &str) -> Result<Option<String>, AppError> {
+        let table = self.find_table_by_name(table_name)?;
+        if table.is_none() {
+            return Err(AppError::Message(format!("Table '{table_name}' not found")));
+        }
+
+        let columns = self.inspect_table_schema(table_name)?;
+
+        let primary_key_column: Vec<&ColumnInfo> = columns
+            .iter()
+            .filter(|column| column.primary_key)
+            .collect();
+
+        match primary_key_column.len() {
+            0 => Ok(None),
+            1 => Ok(Some(primary_key_column[0].name.clone())),
+            _ => Ok(None),
+        }    
+    }
 }
 
 pub fn get_tables(statement: &mut Statement) -> Result<Vec<TableInfo>, AppError> {
@@ -269,6 +289,12 @@ mod tests {
                 [],
             )
             .unwrap();
+        connection
+            .execute(
+                "CREATE TABLE items (name TEXT NOT NULL, qty INTEGER NOT NULL)",
+                [],
+            )
+            .unwrap();
         DatabaseService::from_connection(connection)
     }
 
@@ -298,10 +324,10 @@ mod tests {
     fn test_list_tables() {
         let database_service = in_memory_service_with_tables();
         let tables = database_service.list_tables().unwrap();
-        assert_eq!(tables.len(), 2);
-        assert_eq!(tables[0].name, "notes");
+        assert_eq!(tables.len(), 3);
+        assert_eq!(tables[0].name, "items");
         assert_eq!(tables[0].table_type, "table");
-        assert_eq!(tables[1].name, "users");
+        assert_eq!(tables[1].name, "notes");
         assert_eq!(tables[1].table_type, "table");
     }
 
@@ -508,12 +534,30 @@ mod tests {
             )
             .unwrap();
 
-        connection.execute("INSERT INTO items (name) VALUES ('alpha')", []).unwrap();
-    
+        connection
+            .execute("INSERT INTO items (name) VALUES ('alpha')", [])
+            .unwrap();
 
         let database_service = DatabaseService::from_connection(connection);
-        let result = database_service.query("SELECT id, name FROM items ORDER BY id").unwrap();
+        let result = database_service
+            .query("SELECT id, name FROM items ORDER BY id")
+            .unwrap();
         assert!(result.duration_ms.is_some());
         assert!(result.duration_ms.unwrap() < 1000);
+    }
+
+    #[test]
+    fn test_primary_key_column() {
+        let database_service = in_memory_service_with_tables();
+        let primary_key_column = database_service.primary_key_column("notes").unwrap();
+        assert!(primary_key_column.is_some());
+        assert_eq!(primary_key_column.unwrap(), "id");
+    }
+
+    #[test]
+    fn test_primary_key_column_multiple() {
+        let database_service = in_memory_service_with_tables();
+        let primary_key_column = database_service.primary_key_column("items").unwrap();
+        assert!(primary_key_column.is_none());
     }
 }
