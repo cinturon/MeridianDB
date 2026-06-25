@@ -186,3 +186,31 @@ impl Display for QueryResult {
         )
     }
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CellEditRequest{
+    pub table_name: String,
+    pub primary_key_column: String,
+    pub primary_key_value: String,
+    pub target_column: String,
+    pub new_value: Option<String>,
+}
+
+impl CellEditRequest {
+    pub fn new(
+        table_name: String,
+        primary_key_column: String,
+        primary_key_value: String,
+        target_column: String,
+        new_value: Option<String>,
+    ) -> Self {
+        Self {
+            table_name,
+            primary_key_column,
+            primary_key_value,
+            target_column,
+            new_value,
+        }
+    }
+}
+
