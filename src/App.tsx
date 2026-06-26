@@ -37,6 +37,15 @@ export interface QueryResult {
   duration_ms: number | null;
 }
 
+export interface DraftCellEdit {
+  tableName: string;
+  primaryKeyColumn: string;
+  primaryKeyValue: string;
+  columnName: string;
+  originalValue: string | null;
+  newValue: string | null;
+}
+
 const DEFAULT_QUERY =
   "SELECT name, type FROM sqlite_master WHERE type = 'table' ORDER BY name";
 
@@ -66,6 +75,11 @@ function App() {
   const [primaryKeyColumn, setPrimaryKeyColumn] = useState<string | null>(null);
   const [editabilityState, setEditabilityState] =
     useState<EditabilityState>("idle");
+  const [draftCellEdit, setDraftCellEdit] = useState<DraftCellEdit | null>(null);
+
+  function clearDraftCellEdit() {
+    setDraftCellEdit(null);
+  }
 
   useEffect(() => {
     invoke<AppInfo>("get_app_info").then(setAppInfo);
@@ -88,6 +102,7 @@ function App() {
     setTablePreview(null);
     setPrimaryKeyColumn(null);
     setEditabilityState("loading");
+    clearDraftCellEdit();
 
     await Promise.all([
       invoke<string | null>("get_primary_key_column", {
@@ -161,6 +176,7 @@ function App() {
     setPreviewError(null);
     setPrimaryKeyColumn(null);
     setEditabilityState("idle");
+    clearDraftCellEdit();
 
     try {
       const result = await invoke<TableInfo[]>("list_tables", { path });
@@ -391,6 +407,11 @@ function App() {
                 <p className="preview-meta">
                   Showing {tablePreview.rows.length} of up to {tablePreview.limit} rows
                 </p>
+                {draftCellEdit && draftCellEdit.tableName === selectedTable.name && (
+                  <p className="preview-meta">
+                    Draft edit on <code>{draftCellEdit.columnName}</code> (not saved)
+                  </p>
+                )}
                 <DataGrid columns={tablePreview.columns} rows={tablePreview.rows} />
               </>
             )}
