@@ -44,6 +44,7 @@ type QueryState = "idle" | "loading" | "success" | "empty" | "error";
 type TablesState = "idle" | "loading" | "success" | "empty" | "error";
 type SchemaState = "idle" | "loading" | "success" | "empty" | "error";
 type PreviewState = "idle" | "loading" | "success" | "empty" | "error";
+type EditabilityState = "idle" | "loading" | "ready";
 
 function App() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
@@ -62,6 +63,9 @@ function App() {
   const [queryState, setQueryState] = useState<QueryState>("idle");
   const [queryError, setQueryError] = useState<string | null>(null);
   const [querySql, setQuerySql] = useState(DEFAULT_QUERY);
+  const [primaryKeyColumn, setPrimaryKeyColumn] = useState<string | null>(null);
+  const [editabilityState, setEditabilityState] =
+    useState<EditabilityState>("idle");
 
   useEffect(() => {
     invoke<AppInfo>("get_app_info").then(setAppInfo);
@@ -82,38 +86,57 @@ function App() {
     setPreviewState("loading");
     setPreviewError(null);
     setTablePreview(null);
+    setPrimaryKeyColumn(null);
+    setEditabilityState("loading");
 
-    try {
-      const columns = await invoke<ColumnInfo[]>("inspect_table_schema", {
+    await Promise.all([
+      invoke<string | null>("get_primary_key_column", {
         path,
         tableName: table.name,
-      });
-      setTableSchema(columns);
-      setSchemaState(columns.length === 0 ? "empty" : "success");
-    } catch (err) {
-      const parsed = parseAppError(err);
-      setSchemaState("error");
-      setSchemaError(
-        parsed ? displayAppErrorMessage(parsed) : "Could not inspect table schema.",
-      );
-      setTableSchema([]);
-    }
-
-    try {
-      const preview = await invoke<TablePreview>("preview_table", {
+      })
+        .then((pk) => {
+          setPrimaryKeyColumn(pk);
+          setEditabilityState("ready");
+        })
+        .catch(() => {
+          setPrimaryKeyColumn(null);
+          setEditabilityState("ready");
+        }),
+      invoke<ColumnInfo[]>("inspect_table_schema", {
         path,
         tableName: table.name,
-      });
-      setTablePreview(preview);
-      setPreviewState(preview.rows.length === 0 ? "empty" : "success");
-    } catch (err) {
-      const parsed = parseAppError(err);
-      setPreviewState("error");
-      setPreviewError(
-        parsed ? displayAppErrorMessage(parsed) : "Could not load table preview.",
-      );
-      setTablePreview(null);
-    }
+      })
+        .then((columns) => {
+          setTableSchema(columns);
+          setSchemaState(columns.length === 0 ? "empty" : "success");
+        })
+        .catch((err) => {
+          const parsed = parseAppError(err);
+          setSchemaState("error");
+          setSchemaError(
+            parsed
+              ? displayAppErrorMessage(parsed)
+              : "Could not inspect table schema.",
+          );
+          setTableSchema([]);
+        }),
+      invoke<TablePreview>("preview_table", {
+        path,
+        tableName: table.name,
+      })
+        .then((preview) => {
+          setTablePreview(preview);
+          setPreviewState(preview.rows.length === 0 ? "empty" : "success");
+        })
+        .catch((err) => {
+          const parsed = parseAppError(err);
+          setPreviewState("error");
+          setPreviewError(
+            parsed ? displayAppErrorMessage(parsed) : "Could not load table preview.",
+          );
+          setTablePreview(null);
+        }),
+    ]);
   }
 
   async function handleListTables(event: React.FormEvent) {
@@ -136,6 +159,8 @@ function App() {
     setTablePreview(null);
     setPreviewState("idle");
     setPreviewError(null);
+    setPrimaryKeyColumn(null);
+    setEditabilityState("idle");
 
     try {
       const result = await invoke<TableInfo[]>("list_tables", { path });
@@ -280,6 +305,23 @@ function App() {
           >
             <h3 id="schema-heading">Schema: {selectedTable.name}</h3>
 
+            <p
+              className={`editability-status ${
+                primaryKeyColumn ? "editable" : "read-only"
+              }`}
+              aria-live="polite"
+            >
+              {editabilityState === "loading" && "Checking editability…"}
+              {editabilityState === "ready" && primaryKeyColumn && (
+                <>
+                  Editable: primary key <code>{primaryKeyColumn}</code> detected
+                </>
+              )}
+              {editabilityState === "ready" && !primaryKeyColumn && (
+                <>Read-only: no simple primary key detected</>
+              )}
+            </p>
+
             {schemaState === "loading" && (
               <p className="status-message">Loading columns…</p>
             )}
@@ -307,6 +349,7 @@ function App() {
                   <tbody>
                     {tableSchema.map((column) => (
                       <tr key={column.cid}>
+                        
                         <td className="column-name">{column.name}</td>
                         <td>{column.data_type}</td>
                         <td>{column.not_null ? "Yes" : "No"}</td>

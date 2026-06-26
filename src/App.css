@@ -304,6 +304,32 @@ button:hover:not(:disabled) {
   color: var(--text-muted);
 }
 
+.editability-status {
+  margin: 0 0 1rem;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-row);
+  color: var(--text-muted);
+}
+
+.editability-status code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem;
+  color: #f1f5f9;
+}
+
+.editability-status.editable {
+  border-color: rgba(43, 127, 255, 0.35);
+  background: rgba(43, 127, 255, 0.08);
+  color: #bfdbfe;
+}
+
+.editability-status.read-only {
+  border-color: var(--border-subtle);
+}
+
 .preview-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);
