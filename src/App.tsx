@@ -81,6 +81,29 @@ function App() {
     setDraftCellEdit(null);
   }
 
+  function handleStartCellEdit(
+    columnName: string,
+    primaryKeyValue: string,
+    value: string | null,
+  ) {
+    if (!selectedTable || !primaryKeyColumn) {
+      return;
+    }
+
+    setDraftCellEdit({
+      tableName: selectedTable.name,
+      primaryKeyColumn,
+      primaryKeyValue,
+      columnName,
+      originalValue: value,
+      newValue: value,
+    });
+  }
+
+  function handleDraftChange(newValue: string) {
+    setDraftCellEdit((draft) => (draft ? { ...draft, newValue } : null));
+  }
+
   useEffect(() => {
     invoke<AppInfo>("get_app_info").then(setAppInfo);
   }, []);
@@ -408,11 +431,28 @@ function App() {
                   Showing {tablePreview.rows.length} of up to {tablePreview.limit} rows
                 </p>
                 {draftCellEdit && draftCellEdit.tableName === selectedTable.name && (
-                  <p className="preview-meta">
-                    Draft edit on <code>{draftCellEdit.columnName}</code> (not saved)
+                  <p className="preview-meta draft-edit-hint">
+                    Draft edit on <code>{draftCellEdit.columnName}</code>
+                    {draftCellEdit.newValue !== draftCellEdit.originalValue
+                      ? " (unsaved changes)"
+                      : " (not saved)"}
                   </p>
                 )}
-                <DataGrid columns={tablePreview.columns} rows={tablePreview.rows} />
+                <DataGrid
+                  columns={tablePreview.columns}
+                  rows={tablePreview.rows}
+                  editable={editabilityState === "ready" && primaryKeyColumn != null}
+                  primaryKeyColumn={primaryKeyColumn}
+                  draftCellEdit={draftCellEdit}
+                  onStartEdit={(_rowIndex, columnName, primaryKeyValue, value) =>
+                    handleStartCellEdit(columnName, primaryKeyValue, value)
+                  }
+                  onDraftChange={handleDraftChange}
+                  onCancelEdit={clearDraftCellEdit}
+                  onSaveDraft={() => {
+                    /* placeholder — persistence comes in a later lesson */
+                  }}
+                />
               </>
             )}
           </section>
