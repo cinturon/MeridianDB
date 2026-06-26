@@ -373,6 +373,78 @@ button:hover:not(:disabled) {
   background: rgba(43, 127, 255, 0.04);
 }
 
+.preview-table td.cell-editable {
+  cursor: pointer;
+}
+
+.preview-table td.cell-editable:hover {
+  background: rgba(43, 127, 255, 0.1);
+  outline: 1px solid rgba(43, 127, 255, 0.25);
+}
+
+.preview-table td.cell-editing {
+  background: rgba(43, 127, 255, 0.08);
+  min-width: 12rem;
+}
+
+.cell-edit-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cell-edit-input {
+  width: 100%;
+  min-width: 8rem;
+  padding: 0.35rem 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875rem;
+  color: #f1f5f9;
+  background: var(--bg-panel);
+  border: 1px solid rgba(43, 127, 255, 0.45);
+  border-radius: 6px;
+}
+
+.cell-edit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(43, 127, 255, 0.2);
+}
+
+.cell-edit-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.cell-edit-save,
+.cell-edit-cancel {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.cell-edit-save {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cell-edit-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.cell-edit-cancel:hover {
+  border-color: var(--text-muted);
+  color: #f1f5f9;
+}
+
+.draft-edit-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #bfdbfe;
+}
+
 .workbench-panel {
   margin-top: 1.5rem;
   background: var(--bg-panel);
