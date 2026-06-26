@@ -14,6 +14,15 @@ use crate::models::QueryResult;
 use std::path::PathBuf;
 
 #[tauri::command]
+fn get_primary_key_column(path: &str, table_name: &str) -> Result<Option<String>, AppError> {
+    let database_service =
+        DatabaseService::new(PathBuf::from(path)).map_err(|e| AppError::Message(e.to_string()))?;
+    database_service
+        .primary_key_column(table_name)
+        .map_err(|e| AppError::Message(e.to_string()))
+}
+
+#[tauri::command]
 fn query(path: &str, sql: &str) -> Result<QueryResult, AppError> {
     let database_service =
         DatabaseService::new(PathBuf::from(path)).map_err(|e| AppError::Message(e.to_string()))?;
@@ -149,7 +158,8 @@ pub fn run() {
             find_table_by_name,
             inspect_table_schema,
             preview_table,
-            query
+            query,
+            get_primary_key_column,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
