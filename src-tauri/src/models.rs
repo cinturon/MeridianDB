@@ -101,9 +101,8 @@ pub struct ColumnInfo {
 
 impl ColumnInfo {
     pub fn from_row(row: &Row) -> Result<Self, rusqlite::Error> {
-
         let not_null_flag: i32 = row.get(3)?;
-        let primary_key_flag: i32  = row.get(5)?;
+        let primary_key_flag: i32 = row.get(5)?;
 
         Ok(Self {
             cid: row.get(0)?,
@@ -162,11 +161,7 @@ pub struct QueryResult {
 }
 
 impl QueryResult {
-    pub fn new(
-        columns: Vec<String>,
-        rows: Vec<Vec<String>>,
-        duration_ms: Option<u64>,
-    ) -> Self {
+    pub fn new(columns: Vec<String>, rows: Vec<Vec<String>>, duration_ms: Option<u64>) -> Self {
         let row_count = rows.len();
         Self {
             columns,
@@ -188,7 +183,7 @@ impl Display for QueryResult {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct CellEditRequest{
+pub struct CellEditRequest {
     pub table_name: String,
     pub primary_key_column: String,
     pub primary_key_value: String,
@@ -227,6 +222,43 @@ impl CellEditResult {
 
 impl Display for CellEditResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "CellEditResult {{ rows_updated: {} }}", self.rows_updated)
+        write!(
+            f,
+            "CellEditResult {{ rows_updated: {} }}",
+            self.rows_updated
+        )
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct ChangeHistoryEntry {
+    pub timestamp: String,
+    pub table_name: String,
+    pub primary_key_column: String,
+    pub primary_key_value: String,
+    pub target_column: String,
+    pub new_value: Option<String>,
+    pub original_value: Option<String>,
+}
+
+impl ChangeHistoryEntry {
+    pub fn new(
+        timestamp: String,
+        table_name: String,
+        primary_key_column: String,
+        primary_key_value: String,
+        target_column: String,
+        new_value: Option<String>,
+        original_value: Option<String>,
+    ) -> Self {
+        Self {
+            timestamp,
+            table_name,
+            primary_key_column,
+            primary_key_value,
+            target_column,
+            new_value,
+            original_value,
+        }
     }
 }
