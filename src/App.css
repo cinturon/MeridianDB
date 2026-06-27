@@ -423,8 +423,109 @@ button:hover:not(:disabled) {
 }
 
 .cell-edit-save {
-  opacity: 0.55;
   cursor: pointer;
+}
+
+.cell-edit-save:disabled,
+.cell-edit-cancel:disabled,
+.cell-edit-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.save-confirm-panel {
+  margin-bottom: 1rem;
+  padding: 1rem 1.25rem;
+  background: rgba(43, 127, 255, 0.08);
+  border: 1px solid rgba(43, 127, 255, 0.35);
+  border-radius: 10px;
+}
+
+.save-confirm-panel h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: #f1f5f9;
+}
+
+.save-confirm-summary {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.save-confirm-summary code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #bfdbfe;
+}
+
+.save-confirm-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem 1.5rem;
+  margin: 0 0 1rem;
+}
+
+.save-confirm-details div {
+  min-width: 0;
+}
+
+.save-confirm-details dt {
+  margin: 0 0 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.save-confirm-details dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875rem;
+  color: #f1f5f9;
+  word-break: break-word;
+}
+
+.save-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.save-confirm-button,
+.save-confirm-cancel {
+  padding: 0.375rem 0.875rem;
+  font-size: 0.8125rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.save-confirm-button {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #fff;
+}
+
+.save-confirm-button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.save-confirm-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.save-confirm-cancel:hover:not(:disabled) {
+  border-color: var(--text-muted);
+  color: #f1f5f9;
+}
+
+.save-confirm-button:disabled,
+.save-confirm-cancel:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .cell-edit-cancel {

@@ -15,6 +15,7 @@ interface DataGridProps {
   onDraftChange?: (newValue: string) => void;
   onCancelEdit?: () => void;
   onSaveDraft?: () => void;
+  saveConfirmPending?: boolean;
 }
 
 function displayCell(value: string | null): string {
@@ -34,6 +35,7 @@ export function DataGrid({
   onDraftChange,
   onCancelEdit,
   onSaveDraft,
+  saveConfirmPending = false,
 }: DataGridProps) {
   const pkIndex =
     primaryKeyColumn != null ? columns.indexOf(primaryKeyColumn) : -1;
@@ -82,12 +84,14 @@ export function DataGrid({
                               onDraftChange?.(e.currentTarget.value)
                             }
                             aria-label={`Edit ${columnName}`}
+                            disabled={saveConfirmPending}
                           />
                           <div className="cell-edit-actions">
                             <button
                               type="button"
                               className="cell-edit-save"
                               onClick={() => onSaveDraft?.()}
+                              disabled={saveConfirmPending}
                             >
                               Save
                             </button>
@@ -95,6 +99,7 @@ export function DataGrid({
                               type="button"
                               className="cell-edit-cancel"
                               onClick={() => onCancelEdit?.()}
+                              disabled={saveConfirmPending}
                             >
                               Cancel
                             </button>
