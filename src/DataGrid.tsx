@@ -64,7 +64,7 @@ export function DataGrid({
                     !isPrimaryKeyCell;
                   const isActiveDraft =
                     draftCellEdit != null &&
-                    draftCellEdit.columnName === columnName &&
+                    draftCellEdit.targetColumn === columnName &&
                     draftCellEdit.primaryKeyValue === rowPkValue;
 
                   if (isActiveDraft && draftCellEdit) {
@@ -87,8 +87,6 @@ export function DataGrid({
                             <button
                               type="button"
                               className="cell-edit-save"
-                              disabled
-                              title="Saving comes in a later lesson"
                               onClick={() => onSaveDraft?.()}
                             >
                               Save
@@ -113,27 +111,27 @@ export function DataGrid({
                       onClick={
                         canEditCell
                           ? () =>
-                              onStartEdit?.(
-                                rowIndex,
-                                columnName,
-                                rowPkValue,
-                                cell,
-                              )
+                            onStartEdit?.(
+                              rowIndex,
+                              columnName,
+                              rowPkValue,
+                              cell,
+                            )
                           : undefined
                       }
                       onKeyDown={
                         canEditCell
                           ? (e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                onStartEdit?.(
-                                  rowIndex,
-                                  columnName,
-                                  rowPkValue,
-                                  cell,
-                                );
-                              }
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              onStartEdit?.(
+                                rowIndex,
+                                columnName,
+                                rowPkValue,
+                                cell,
+                              );
                             }
+                          }
                           : undefined
                       }
                       role={canEditCell ? "button" : undefined}

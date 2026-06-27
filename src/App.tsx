@@ -41,10 +41,15 @@ export interface DraftCellEdit {
   tableName: string;
   primaryKeyColumn: string;
   primaryKeyValue: string;
-  columnName: string;
+  targetColumn: string;
   originalValue: string | null;
   newValue: string | null;
 }
+
+export interface CellEditResult {
+  rows_updated: number;
+}
+
 
 const DEFAULT_QUERY =
   "SELECT name, type FROM sqlite_master WHERE type = 'table' ORDER BY name";
@@ -76,13 +81,43 @@ function App() {
   const [editabilityState, setEditabilityState] =
     useState<EditabilityState>("idle");
   const [draftCellEdit, setDraftCellEdit] = useState<DraftCellEdit | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [affectedRows, setAffectedRows] = useState<number>(0);
+
+  async function handleSaveDraft() {
+    if (!draftCellEdit) {
+      return;
+    }
+    try {
+      
+      const result = await invoke<CellEditResult>("update_cell", {
+        path: databasePath.trim(),
+        request: {
+          table_name: draftCellEdit.tableName,
+          primary_key_column: draftCellEdit.primaryKeyColumn,
+          primary_key_value: draftCellEdit.primaryKeyValue,
+          target_column: draftCellEdit.targetColumn,
+          new_value: draftCellEdit.newValue,
+        },
+      });
+      setAffectedRows(result.rows_updated);
+      
+      if (selectedTable) {
+        await handleSelectTable(selectedTable);
+      }
+      setDraftError(null);
+    } catch (error) {
+      const parsed = parseAppError(error);
+      setDraftError(parsed ? displayAppErrorMessage(parsed) : "Could not save draft.");
+    }
+  }
 
   function clearDraftCellEdit() {
     setDraftCellEdit(null);
   }
 
   function handleStartCellEdit(
-    columnName: string,
+    targetColumn: string,
     primaryKeyValue: string,
     value: string | null,
   ) {
@@ -94,7 +129,7 @@ function App() {
       tableName: selectedTable.name,
       primaryKeyColumn,
       primaryKeyValue,
-      columnName,
+      targetColumn,
       originalValue: value,
       newValue: value,
     });
@@ -345,9 +380,8 @@ function App() {
             <h3 id="schema-heading">Schema: {selectedTable.name}</h3>
 
             <p
-              className={`editability-status ${
-                primaryKeyColumn ? "editable" : "read-only"
-              }`}
+              className={`editability-status ${primaryKeyColumn ? "editable" : "read-only"
+                }`}
               aria-live="polite"
             >
               {editabilityState === "loading" && "Checking editability…"}
@@ -388,7 +422,7 @@ function App() {
                   <tbody>
                     {tableSchema.map((column) => (
                       <tr key={column.cid}>
-                        
+
                         <td className="column-name">{column.name}</td>
                         <td>{column.data_type}</td>
                         <td>{column.not_null ? "Yes" : "No"}</td>
@@ -430,9 +464,17 @@ function App() {
                 <p className="preview-meta">
                   Showing {tablePreview.rows.length} of up to {tablePreview.limit} rows
                 </p>
+                {affectedRows > 0 && (
+                  <p className="status-message">
+                    {affectedRows} row{affectedRows === 1 ? "" : "s"} affected
+                  </p>
+                )}
+                {draftError && (
+                  <p className="status-message error">{draftError}</p>
+                )}
                 {draftCellEdit && draftCellEdit.tableName === selectedTable.name && (
                   <p className="preview-meta draft-edit-hint">
-                    Draft edit on <code>{draftCellEdit.columnName}</code>
+                    Draft edit on <code>{draftCellEdit.targetColumn}</code>
                     {draftCellEdit.newValue !== draftCellEdit.originalValue
                       ? " (unsaved changes)"
                       : " (not saved)"}
@@ -449,9 +491,7 @@ function App() {
                   }
                   onDraftChange={handleDraftChange}
                   onCancelEdit={clearDraftCellEdit}
-                  onSaveDraft={() => {
-                    /* placeholder — persistence comes in a later lesson */
-                  }}
+                  onSaveDraft={handleSaveDraft}
                 />
               </>
             )}
