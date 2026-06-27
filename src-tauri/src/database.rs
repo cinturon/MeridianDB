@@ -316,23 +316,36 @@ impl DatabaseService {
         Ok(CellEditResult::new(rows_updated as i64))
     }
 
-    pub fn get_change_history(&self) -> Result<Vec<ChangeHistoryEntry>, AppError> {
+    pub fn get_change_history(&self, table_name: Option<String>) -> Result<Vec<ChangeHistoryEntry>, AppError> {
         ensure_change_history_table(&self.connection)?;
 
-        let mut statement = self
-            .connection
-            .prepare(
-                "SELECT timestamp, table_name, primary_key_column, primary_key_value, target_column, new_value, original_value
-                 FROM meridian_change_history
-                 ORDER BY id DESC
-                 LIMIT 25",
-            )
-            .map_err(sqlite_err)?;
-        let entries = statement
-            .query_map([], ChangeHistoryEntry::from_row)
-            .map_err(sqlite_err)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(sqlite_err)?;
+        let where_clause = if table_name.is_some() {
+            format!("WHERE table_name = ?")
+        } else {
+            "".to_string()
+        };
+
+        let sql = format!(
+            "SELECT timestamp, table_name, primary_key_column, primary_key_value, target_column, new_value, original_value
+             FROM meridian_change_history
+             {where_clause}
+             ORDER BY id DESC
+             LIMIT 25",
+        );
+
+        let mut statement = self.connection.prepare(&sql).map_err(sqlite_err)?;
+        
+        let rows = match table_name {
+            Some(name_value) => {
+                statement.query_map([name_value], ChangeHistoryEntry::from_row)
+            }
+            None => {
+                statement.query_map([], ChangeHistoryEntry::from_row)
+            }
+        };
+
+        let entries = rows.map_err(sqlite_err)?.collect::<Result<Vec<_>, _>>().map_err(sqlite_err)?;
+
         Ok(entries)
     }
 }
@@ -1123,7 +1136,7 @@ mod tests {
         );
         database_service.update_cell(&request).unwrap();
 
-        let change_history = database_service.get_change_history().unwrap();
+        let change_history = database_service.get_change_history(None).unwrap();
         assert_eq!(change_history.len(), 1);
         assert_eq!(change_history[0].cell_edit_request.table_name, "notes");
         assert_eq!(change_history[0].cell_edit_request.primary_key_column, "id");
@@ -1137,7 +1150,7 @@ mod tests {
     fn test_get_change_history_returns_empty_list() {
         let database_service = in_memory_service_with_notes_row();
 
-        let change_history = database_service.get_change_history().unwrap();
+        let change_history = database_service.get_change_history(None).unwrap();
 
         assert!(change_history.is_empty());
     }
@@ -1155,7 +1168,7 @@ mod tests {
             database_service.update_cell(request).unwrap();
         }
 
-        let change_history = database_service.get_change_history().unwrap();
+        let change_history = database_service.get_change_history(None).unwrap();
 
         assert_eq!(change_history.len(), 3);
         assert_eq!(
@@ -1170,5 +1183,32 @@ mod tests {
             change_history[2].cell_edit_request.new_value,
             Some("First Update".to_string())
         );
+    }
+
+    #[test]
+    fn test_get_change_history_filters_by_table_name() {
+        let database_service = in_memory_service_with_notes_row();
+        let request = CellEditRequest::new(
+            "notes".to_string(),
+            "id".to_string(),
+            "1".to_string(),
+            "title".to_string(),
+            Some("Updated Title".to_string()),
+            Some("Original Title".to_string()),
+        );
+        database_service.update_cell(&request).unwrap();
+
+        let all_history = database_service.get_change_history(None).unwrap();
+        let notes_history = database_service
+            .get_change_history(Some("notes".to_string()))
+            .unwrap();
+        let other_history = database_service
+            .get_change_history(Some("items".to_string()))
+            .unwrap();
+
+        assert_eq!(all_history.len(), 1);
+        assert_eq!(notes_history.len(), 1);
+        assert_eq!(notes_history[0].cell_edit_request.table_name, "notes");
+        assert!(other_history.is_empty());
     }
 }

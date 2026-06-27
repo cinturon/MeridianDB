@@ -17,11 +17,11 @@ use crate::models::ChangeHistoryEntry;
 use std::path::PathBuf;
 
 #[tauri::command]
-fn get_change_history(path: &str) -> Result<Vec<ChangeHistoryEntry>, AppError> {
+fn get_change_history(path: &str, table_name: Option<&str>) -> Result<Vec<ChangeHistoryEntry>, AppError> {
     let database_service =
         DatabaseService::new(PathBuf::from(path)).map_err(|e| AppError::Message(e.to_string()))?;
     database_service
-        .get_change_history()
+        .get_change_history(table_name.map(|s| s.to_string()))
         .map_err(|e| AppError::Message(e.to_string()))
 }
 
