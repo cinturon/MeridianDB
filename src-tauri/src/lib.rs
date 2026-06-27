@@ -7,11 +7,23 @@ use crate::database::create_notes_table;
 use crate::database::DatabaseService;
 use crate::models::DatabaseHealth;
 use crate::models::Note;
+use crate::models::CellEditRequest;
+use crate::models::CellEditResult;
 use crate::models::TableInfo;
 use crate::models::ColumnInfo;
 use crate::models::TablePreview;
 use crate::models::QueryResult;
 use std::path::PathBuf;
+
+
+#[tauri::command]
+fn update_cell(path: &str, request: CellEditRequest) -> Result<CellEditResult, AppError> {
+    let database_service =
+        DatabaseService::new(PathBuf::from(path)).map_err(|e| AppError::Message(e.to_string()))?;
+    database_service
+        .update_cell(&request)
+        .map_err(|e| AppError::Message(e.to_string()))
+}
 
 #[tauri::command]
 fn get_primary_key_column(path: &str, table_name: &str) -> Result<Option<String>, AppError> {
@@ -160,6 +172,7 @@ pub fn run() {
             preview_table,
             query,
             get_primary_key_column,
+            update_cell,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
