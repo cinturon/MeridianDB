@@ -554,6 +554,77 @@ button:hover:not(:disabled) {
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
 }
 
+.change-history-panel {
+  margin-top: 1.5rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: left;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.change-history-panel h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+  color: #f1f5f9;
+}
+
+.change-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.change-history-item {
+  margin: 0;
+  padding: 0.875rem 1rem;
+  background: var(--bg-row);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+
+.change-history-meta {
+  margin: 0 0 0.625rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.change-history-meta code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #bfdbfe;
+}
+
+.change-history-table {
+  color: #e2e8f0;
+}
+
+.change-history-values {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.change-history-values dt {
+  margin: 0 0 0.25rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.change-history-values dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875rem;
+  color: #f1f5f9;
+  word-break: break-word;
+}
+
 .workbench-panel h2 {
   margin: 0 0 0.5rem;
   font-size: 1.125rem;
