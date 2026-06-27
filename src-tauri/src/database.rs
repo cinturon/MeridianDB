@@ -8,6 +8,7 @@ use crate::models::Note;
 use crate::models::QueryResult;
 use crate::models::TableInfo;
 use crate::models::TablePreview;
+use crate::models::UndoPreview;
 use rusqlite::Connection;
 use rusqlite::Statement;
 use std::path::PathBuf;
@@ -320,7 +321,7 @@ impl DatabaseService {
         ensure_change_history_table(&self.connection)?;
 
         let where_clause = if table_name.is_some() {
-            format!("WHERE table_name = ?")
+            "WHERE table_name = ?".to_string()
         } else {
             "".to_string()
         };
@@ -347,6 +348,104 @@ impl DatabaseService {
         let entries = rows.map_err(sqlite_err)?.collect::<Result<Vec<_>, _>>().map_err(sqlite_err)?;
 
         Ok(entries)
+    }
+
+    pub fn undo_preview(&self, history_entry_id: i64) -> Result<UndoPreview, AppError> {
+        ensure_change_history_table(&self.connection)?;
+
+        let history = self
+            .connection
+            .query_row(
+                "SELECT id, table_name, primary_key_column, primary_key_value, target_column, new_value, original_value
+                 FROM meridian_change_history
+                 WHERE id = ?",
+                [history_entry_id],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6)?,
+                    ))
+                },
+            )
+            .map_err(|error| match error {
+                rusqlite::Error::QueryReturnedNoRows => AppError::Message(format!(
+                    "History entry with id {history_entry_id} not found"
+                )),
+                other => sqlite_err(other),
+            })?;
+
+        let (
+            id,
+            table_name,
+            primary_key_column,
+            primary_key_value,
+            target_column,
+            history_new_value,
+            history_original_value,
+        ) = history;
+
+        let current_value = self.read_cell_value(
+            &table_name,
+            &primary_key_column,
+            &primary_key_value,
+            &target_column,
+        )?;
+
+        let is_safe_to_undo = current_value == history_new_value;
+        let warning_message = if is_safe_to_undo {
+            None
+        } else {
+            Some("Cell value changed since this history entry was recorded.".to_string())
+        };
+
+        Ok(UndoPreview {
+            history_entry_id: id,
+            table_name,
+            primary_key_column,
+            primary_key_value,
+            target_column,
+            current_value,
+            restored_value: history_original_value,
+            is_safe_to_undo,
+            warning_message,
+        })
+    }
+
+    fn read_cell_value(
+        &self,
+        table_name: &str,
+        primary_key_column: &str,
+        primary_key_value: &str,
+        target_column: &str,
+    ) -> Result<String, AppError> {
+        if self.find_table_by_name(table_name)?.is_none() {
+            return Err(AppError::Message(format!("Table '{table_name}' not found")));
+        }
+
+        let escaped_table_name = table_name.replace('"', "\"\"");
+        let escaped_primary_key_column = primary_key_column.replace('"', "\"\"");
+        let escaped_target_column = target_column.replace('"', "\"\"");
+
+        let sql = format!(
+            "SELECT \"{escaped_target_column}\" FROM \"{escaped_table_name}\" WHERE \"{escaped_primary_key_column}\" = ?"
+        );
+
+        self.connection
+            .query_row(&sql, [primary_key_value], |row| {
+                let value: rusqlite::types::Value = row.get(0)?;
+                Ok(value_to_string(value))
+            })
+            .map_err(|error| match error {
+                rusqlite::Error::QueryReturnedNoRows => AppError::Message(format!(
+                    "Row with {primary_key_column} = '{primary_key_value}' not found in table '{table_name}'"
+                )),
+                other => sqlite_err(other),
+            })
     }
 }
 
@@ -1210,5 +1309,86 @@ mod tests {
         assert_eq!(notes_history.len(), 1);
         assert_eq!(notes_history[0].cell_edit_request.table_name, "notes");
         assert!(other_history.is_empty());
+    }
+
+    fn history_entry_id_for_new_value(
+        database_service: &DatabaseService,
+        new_value: &str,
+    ) -> i64 {
+        database_service
+            .connection
+            .query_row(
+                "SELECT id FROM meridian_change_history WHERE new_value = ? ORDER BY id DESC LIMIT 1",
+                [new_value],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn test_undo_preview_is_safe_when_cell_matches_history_new_value() {
+        let database_service = in_memory_service_with_notes_row();
+        let request = notes_edit_request_with_value(
+            "id",
+            "1",
+            "title",
+            Some("Updated Title".to_string()),
+        );
+        database_service.update_cell(&request).unwrap();
+
+        let history_entry_id = history_entry_id_for_new_value(&database_service, "Updated Title");
+        let preview = database_service
+            .undo_preview(history_entry_id)
+            .unwrap();
+
+        assert!(preview.is_safe_to_undo);
+        assert_eq!(preview.current_value, "Updated Title");
+        assert_eq!(preview.restored_value, "Original Title");
+        assert!(preview.warning_message.is_none());
+    }
+
+    #[test]
+    fn test_undo_preview_warns_when_cell_changed_after_history_entry() {
+        let database_service = in_memory_service_with_notes_row();
+        let first_edit = notes_edit_request_with_value(
+            "id",
+            "1",
+            "title",
+            Some("First Update".to_string()),
+        );
+        database_service.update_cell(&first_edit).unwrap();
+        let first_history_id = history_entry_id_for_new_value(&database_service, "First Update");
+
+        let second_edit = notes_edit_request_with_value(
+            "id",
+            "1",
+            "title",
+            Some("Second Update".to_string()),
+        );
+        database_service.update_cell(&second_edit).unwrap();
+
+        let preview = database_service
+            .undo_preview(first_history_id)
+            .unwrap();
+
+        assert!(!preview.is_safe_to_undo);
+        assert_eq!(preview.current_value, "Second Update");
+        assert_eq!(preview.restored_value, "Original Title");
+        assert_eq!(
+            preview.warning_message,
+            Some("Cell value changed since this history entry was recorded.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_undo_preview_returns_error_for_missing_history_entry() {
+        let database_service = in_memory_service_with_notes_row();
+
+        let error = database_service.undo_preview(999).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "History entry with id 999 not found"
+        );
     }
 }
