@@ -315,6 +315,26 @@ impl DatabaseService {
 
         Ok(CellEditResult::new(rows_updated as i64))
     }
+
+    pub fn get_change_history(&self) -> Result<Vec<ChangeHistoryEntry>, AppError> {
+        ensure_change_history_table(&self.connection)?;
+
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT timestamp, table_name, primary_key_column, primary_key_value, target_column, new_value, original_value
+                 FROM meridian_change_history
+                 ORDER BY id DESC
+                 LIMIT 25",
+            )
+            .map_err(sqlite_err)?;
+        let entries = statement
+            .query_map([], ChangeHistoryEntry::from_row)
+            .map_err(sqlite_err)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(sqlite_err)?;
+        Ok(entries)
+    }
 }
 
 pub fn get_tables(statement: &mut Statement) -> Result<Vec<TableInfo>, AppError> {
@@ -1088,5 +1108,67 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_get_change_history() {
+        let database_service = in_memory_service_with_notes_row();
+        let request = CellEditRequest::new(
+            "notes".to_string(),
+            "id".to_string(),
+            "1".to_string(),
+            "title".to_string(),
+            Some("Updated Title".to_string()),
+            Some("Original Title".to_string()),
+        );
+        database_service.update_cell(&request).unwrap();
+
+        let change_history = database_service.get_change_history().unwrap();
+        assert_eq!(change_history.len(), 1);
+        assert_eq!(change_history[0].cell_edit_request.table_name, "notes");
+        assert_eq!(change_history[0].cell_edit_request.primary_key_column, "id");
+        assert_eq!(change_history[0].cell_edit_request.primary_key_value, "1");
+        assert_eq!(change_history[0].cell_edit_request.target_column, "title");
+        assert_eq!(change_history[0].cell_edit_request.new_value, Some("Updated Title".to_string()));
+        assert_eq!(change_history[0].cell_edit_request.original_value, Some("Original Title".to_string()));
+    }
+
+    #[test]
+    fn test_get_change_history_returns_empty_list() {
+        let database_service = in_memory_service_with_notes_row();
+
+        let change_history = database_service.get_change_history().unwrap();
+
+        assert!(change_history.is_empty());
+    }
+
+    #[test]
+    fn test_get_change_history_orders_newest_first() {
+        let database_service = in_memory_service_with_notes_row();
+        let requests = [
+            notes_edit_request_with_value("id", "1", "title", Some("First Update".to_string())),
+            notes_edit_request_with_value("id", "1", "title", Some("Second Update".to_string())),
+            notes_edit_request_with_value("id", "1", "title", Some("Third Update".to_string())),
+        ];
+
+        for request in &requests {
+            database_service.update_cell(request).unwrap();
+        }
+
+        let change_history = database_service.get_change_history().unwrap();
+
+        assert_eq!(change_history.len(), 3);
+        assert_eq!(
+            change_history[0].cell_edit_request.new_value,
+            Some("Third Update".to_string())
+        );
+        assert_eq!(
+            change_history[1].cell_edit_request.new_value,
+            Some("Second Update".to_string())
+        );
+        assert_eq!(
+            change_history[2].cell_edit_request.new_value,
+            Some("First Update".to_string())
+        );
     }
 }

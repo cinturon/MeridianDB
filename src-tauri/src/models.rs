@@ -240,13 +240,39 @@ pub struct ChangeHistoryEntry {
 }
 
 impl ChangeHistoryEntry {
-    pub fn new(
-        timestamp: String,
-        cell_edit_request: CellEditRequest,
-    ) -> Self {
+    pub fn new(timestamp: String, cell_edit_request: CellEditRequest) -> Self {
         Self {
             timestamp,
-            cell_edit_request
+            cell_edit_request,
         }
+    }
+}
+
+impl ChangeHistoryEntry {
+    pub fn from_row(row: &Row) -> Result<Self, rusqlite::Error> {
+        let new_value: String = row.get(5)?;
+        let original_value: String = row.get(6)?;
+
+        let cell_edit_request = CellEditRequest::new(
+            row.get(1)?,
+            row.get(2)?,
+            row.get(3)?,
+            row.get(4)?,
+            optional_stored_value(new_value),
+            optional_stored_value(original_value),
+        );
+
+        Ok(Self {
+            timestamp: row.get(0)?,
+            cell_edit_request,
+        })
+    }
+}
+
+fn optional_stored_value(value: String) -> Option<String> {
+    if value == "NULL" {
+        None
+    } else {
+        Some(value)
     }
 }
