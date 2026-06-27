@@ -136,9 +136,12 @@ function App() {
       return;
     }
     setSaving(true);
+    const path = databasePath.trim();
+    let saveSucceeded = false;
+
     try {
       const result = await invoke<CellEditResult>("update_cell", {
-        path: databasePath.trim(),
+        path,
         request: {
           table_name: draftCellEdit.tableName,
           primary_key_column: draftCellEdit.primaryKeyColumn,
@@ -150,17 +153,32 @@ function App() {
       });
       setShowSaveConfirm(false);
       setAffectedRows(result.rows_updated);
-      if (selectedTable) {
-        await handleSelectTable(selectedTable);
-      }
-      await loadChangeHistory(databasePath.trim());
       setDraftError(null);
+      clearDraftCellEdit();
+      saveSucceeded = true;
     } catch (error) {
       const parsed = parseAppError(error);
       setDraftError(parsed ? displayAppErrorMessage(parsed) : "Could not save draft.");
     } finally {
       setSaving(false);
     }
+
+    if (!saveSucceeded) {
+      return;
+    }
+
+    if (selectedTable) {
+      try {
+        await handleSelectTable(selectedTable);
+      } catch {
+        setPreviewState("error");
+        setPreviewError(
+          "Save succeeded, but the table preview could not be refreshed.",
+        );
+      }
+    }
+
+    await loadChangeHistory(path);
   }
 
   function clearDraftCellEdit() {
