@@ -118,6 +118,7 @@ function App() {
   const [changeHistory, setChangeHistory] = useState<ChangeHistoryEntry[]>([]);
   const [changeHistoryState, setChangeHistoryState] = useState<ChangeHistoryState>("idle");
   const [changeHistoryError, setChangeHistoryError] = useState<string | null>(null);
+  const [historyTableFilter, setHistoryTableFilter] = useState<string | null>(null);
 
   function handleRequestSave() {
     if (!draftCellEdit) {
@@ -178,7 +179,7 @@ function App() {
       }
     }
 
-    await loadChangeHistory(path);
+    await loadChangeHistory(path, historyTableFilter);
   }
 
   function clearDraftCellEdit() {
@@ -210,12 +211,15 @@ function App() {
     setDraftCellEdit((draft) => (draft ? { ...draft, newValue } : null));
   }
 
-  async function loadChangeHistory(path: string) {
+  async function loadChangeHistory(path: string, tableName: string | null = null) {
     setChangeHistoryState("loading");
     setChangeHistoryError(null);
 
     try {
-      const history = await invoke<ChangeHistoryEntry[]>("get_change_history", { path });
+      const history = await invoke<ChangeHistoryEntry[]>("get_change_history", {
+        path,
+        tableName,
+      });
       setChangeHistory(history);
       setChangeHistoryState(history.length === 0 ? "empty" : "success");
     } catch (err) {
@@ -299,6 +303,9 @@ function App() {
           setTablePreview(null);
         }),
     ]);
+
+    setHistoryTableFilter(table.name);
+    await loadChangeHistory(path, table.name);
   }
 
   async function handleListTables(event: React.FormEvent) {
@@ -327,12 +334,13 @@ function App() {
     setChangeHistory([]);
     setChangeHistoryState("idle");
     setChangeHistoryError(null);
+    setHistoryTableFilter(null);
 
     try {
       const result = await invoke<TableInfo[]>("list_tables", { path });
       setTables(result);
       setTablesState(result.length === 0 ? "empty" : "success");
-      await loadChangeHistory(path);
+      await loadChangeHistory(path, null);
     } catch (err) {
       const parsed = parseAppError(err);
       setTablesState("error");
@@ -341,6 +349,20 @@ function App() {
       );
       setTables([]);
     }
+  }
+
+  async function handleHistoryTableFilterChange(
+    event: React.ChangeEvent<HTMLSelectElement>,
+  ) {
+    const path = databasePath.trim();
+    if (!path) {
+      return;
+    }
+
+    const value = event.currentTarget.value;
+    const tableName = value === "" ? null : value;
+    setHistoryTableFilter(tableName);
+    await loadChangeHistory(path, tableName);
   }
 
   async function handleRunQuery(event: React.FormEvent) {
@@ -646,8 +668,29 @@ function App() {
       >
         <h2 id="change-history-heading">Change History</h2>
         <p className="panel-hint">
-          Recent cell edits for the open database, newest first.
+          {historyTableFilter
+            ? `Recent edits for table ${historyTableFilter}, newest first.`
+            : "Recent cell edits for the open database, newest first."}
         </p>
+
+        {tablesState === "success" && (
+          <div className="change-history-filter">
+            <label htmlFor="history-table-filter">Table filter</label>
+            <select
+              id="history-table-filter"
+              value={historyTableFilter ?? ""}
+              onChange={handleHistoryTableFilterChange}
+              disabled={changeHistoryState === "loading"}
+            >
+              <option value="">All tables</option>
+              {tables.map((table) => (
+                <option key={table.name} value={table.name}>
+                  {table.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {changeHistoryState === "idle" && (
           <p className="status-message">
@@ -664,7 +707,11 @@ function App() {
         )}
 
         {changeHistoryState === "empty" && (
-          <p className="status-message">No edits recorded yet.</p>
+          <p className="status-message">
+            {historyTableFilter
+              ? `No edits recorded yet for table ${historyTableFilter}.`
+              : "No edits recorded yet."}
+          </p>
         )}
 
         {changeHistoryState === "success" && (
