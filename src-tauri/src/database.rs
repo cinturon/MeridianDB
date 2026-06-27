@@ -319,6 +319,25 @@ fn value_to_string(value: rusqlite::types::Value) -> String {
     }
 }
 
+pub fn ensure_change_history_table(conn: &Connection) -> Result<(), AppError> {
+    
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS meridian_change_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            table_name TEXT NOT NULL,
+            primary_key_column TEXT NOT NULL,
+            primary_key_value TEXT NOT NULL,
+            target_column TEXT NOT NULL,
+            new_value TEXT NOT NULL,
+            original_value TEXT NOT NULL
+        )",
+        [],
+    ).map_err(|e| AppError::Message(e.to_string()))?;
+
+    Ok(())
+}
+
 pub fn create_notes_table(title: &str, content: &str) -> Result<Note, AppError> {
     let conn = Connection::open_in_memory().map_err(|e| AppError::Message(e.to_string()))?;
 
@@ -915,5 +934,21 @@ mod tests {
             )
             .unwrap();
         assert_eq!(title, "Second Update");
+    }
+
+    #[test]
+    fn test_ensure_change_history_table() {
+        let connection = Connection::open_in_memory().unwrap();
+        assert!(ensure_change_history_table(&connection).is_ok());
+    }
+
+    #[test]
+    fn test_ensure_change_history_table_already_exists() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute(
+            "CREATE TABLE meridian_change_history (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, table_name TEXT NOT NULL, primary_key_column TEXT NOT NULL, primary_key_value TEXT NOT NULL, target_column TEXT NOT NULL, new_value TEXT NOT NULL, original_value TEXT NOT NULL)",
+            [],
+        ).unwrap();
+        assert!(ensure_change_history_table(&connection).is_ok());
     }
 }
