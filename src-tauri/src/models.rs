@@ -276,3 +276,61 @@ fn optional_stored_value(value: String) -> Option<String> {
         Some(value)
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct UndoPreview {
+    pub history_entry_id: i64,
+    pub table_name: String,
+    pub primary_key_column: String,
+    pub primary_key_value: String,
+    pub target_column: String,
+    pub current_value: String,
+    pub restored_value: String,
+    pub is_safe_to_undo: bool,
+    pub warning_message: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UndoPreview;
+
+    #[test]
+    fn test_undo_preview_safe_construction() {
+        let preview = UndoPreview {
+            history_entry_id: 1,
+            table_name: "employees".into(),
+            primary_key_column: "id".into(),
+            primary_key_value: "3".into(),
+            target_column: "name".into(),
+            current_value: "Ada Lovelace".into(),
+            restored_value: "Ada".into(),
+            is_safe_to_undo: true,
+            warning_message: None,
+        };
+
+        assert!(preview.is_safe_to_undo);
+        assert_eq!(preview.restored_value, "Ada");
+        assert!(preview.warning_message.is_none());
+    }
+
+    #[test]
+    fn test_undo_preview_unsafe_construction_with_warning() {
+        let preview = UndoPreview {
+            history_entry_id: 2,
+            table_name: "employees".into(),
+            primary_key_column: "id".into(),
+            primary_key_value: "3".into(),
+            target_column: "name".into(),
+            current_value: "Someone Else".into(),
+            restored_value: "Ada".into(),
+            is_safe_to_undo: false,
+            warning_message: Some(
+                "Cell value changed since this history entry was recorded.".into(),
+            ),
+        };
+
+        assert!(!preview.is_safe_to_undo);
+        assert_eq!(preview.restored_value, "Ada");
+        assert!(preview.warning_message.is_some());
+    }
+}
