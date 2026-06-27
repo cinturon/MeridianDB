@@ -5,6 +5,7 @@ use crate::models::Note;
 use crate::models::QueryResult;
 use crate::models::TableInfo;
 use crate::models::TablePreview;
+use crate::models::CellEditRequest;
 use rusqlite::Connection;
 use rusqlite::Statement;
 use std::path::PathBuf;
@@ -205,6 +206,60 @@ impl DatabaseService {
             1 => Ok(Some(primary_key_column[0].name.clone())),
             _ => Ok(None),
         }    
+    }
+
+    pub fn validate_cell_edit_request(&self, request: &CellEditRequest) -> Result<(), AppError> {
+        if request.table_name.trim().is_empty() {
+            return Err(AppError::Message("Table name is required".to_string()));
+        }
+        if request.primary_key_column.trim().is_empty() {
+            return Err(AppError::Message("Primary key column is required".to_string()));
+        }
+        if request.primary_key_value.trim().is_empty() {
+            return Err(AppError::Message("Primary key value is required".to_string()));
+        }
+        if request.target_column.trim().is_empty() {
+            return Err(AppError::Message("Column name is required".to_string()));
+        }
+
+        let table = self.find_table_by_name(&request.table_name)?;
+        if table.is_none() {
+            return Err(AppError::Message(format!(
+                "Table '{}' not found",
+                request.table_name
+            )));
+        }
+
+        let detected_pk = self.primary_key_column(&request.table_name)?;
+        let Some(detected_pk) = detected_pk else {
+            return Err(AppError::Message(format!(
+                "Table '{}' has no supported primary key for editing",
+                request.table_name
+            )));
+        };
+
+        if request.primary_key_column != detected_pk {
+            return Err(AppError::Message(
+                "Primary key column does not match table schema".to_string(),
+            ));
+        }
+
+        if request.target_column == detected_pk {
+            return Err(AppError::Message(format!(
+                "Cannot edit primary key column '{}'",
+                detected_pk
+            )));
+        }
+
+        let columns = self.inspect_table_schema(&request.table_name)?;
+        if !columns.iter().any(|column| column.name == request.target_column) {
+            return Err(AppError::Message(format!(
+                "Column '{}' not found in table '{}'",
+                request.target_column, request.table_name
+            )));
+        }
+
+        Ok(())
     }
 }
 
@@ -559,5 +614,130 @@ mod tests {
         let database_service = in_memory_service_with_tables();
         let primary_key_column = database_service.primary_key_column("items").unwrap();
         assert!(primary_key_column.is_none());
+    }
+
+    fn notes_edit_request(
+        primary_key_column: &str,
+        primary_key_value: &str,
+        target_column: &str,
+    ) -> CellEditRequest {
+        CellEditRequest::new(
+            "notes".to_string(),
+            primary_key_column.to_string(),
+            primary_key_value.to_string(),
+            target_column.to_string(),
+            Some("New Title".to_string()),
+        )
+    }
+
+    #[test]
+    fn test_validate_cell_edit_request_accepts_valid_edit() {
+        let database_service = in_memory_service_with_tables();
+        let request = notes_edit_request("id", "1", "title");
+        assert!(database_service.validate_cell_edit_request(&request).is_ok());
+    }
+
+    #[test]
+    fn test_validate_cell_edit_request_rejects_unknown_table() {
+        let database_service = in_memory_service_with_tables();
+        let request = CellEditRequest::new(
+            "ghost".to_string(),
+            "id".to_string(),
+            "1".to_string(),
+            "title".to_string(),
+            None,
+        );
+        let err = database_service
+            .validate_cell_edit_request(&request)
+            .unwrap_err();
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_validate_cell_edit_request_rejects_unknown_column() {
+        let database_service = in_memory_service_with_tables();
+        let request = notes_edit_request("id", "1", "ghost");
+        let err = database_service
+            .validate_cell_edit_request(&request)
+            .unwrap_err();
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_validate_cell_edit_request_rejects_primary_key_target() {
+        let database_service = in_memory_service_with_tables();
+        let request = notes_edit_request("id", "1", "id");
+        let err = database_service
+            .validate_cell_edit_request(&request)
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Cannot edit primary key column 'id'"
+        );
+    }
+
+    #[test]
+    fn test_validate_cell_edit_request_rejects_table_without_primary_key() {
+        let database_service = in_memory_service_with_tables();
+        let request = CellEditRequest::new(
+            "items".to_string(),
+            "id".to_string(),
+            "1".to_string(),
+            "name".to_string(),
+            None,
+        );
+        let err = database_service
+            .validate_cell_edit_request(&request)
+            .unwrap_err();
+        assert!(err.to_string().contains("no supported primary key"));
+    }
+
+    #[test]
+    fn test_validate_cell_edit_request_rejects_mismatched_primary_key_column() {
+        let database_service = in_memory_service_with_tables();
+        let request = notes_edit_request("wrong_pk", "1", "title");
+        let err = database_service
+            .validate_cell_edit_request(&request)
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Primary key column does not match table schema"
+        );
+    }
+
+    #[test]
+    fn test_validate_cell_edit_request_rejects_empty_table_name() {
+        let database_service = in_memory_service_with_tables();
+        let request = CellEditRequest::new(
+            "   ".to_string(),
+            "id".to_string(),
+            "1".to_string(),
+            "title".to_string(),
+            None,
+        );
+        let err = database_service
+            .validate_cell_edit_request(&request)
+            .unwrap_err();
+        assert_eq!(err.to_string(), "Table name is required");
+    }
+
+    #[test]
+    fn test_validate_cell_edit_request_rejects_empty_target_column() {
+        let database_service = in_memory_service_with_tables();
+        let request = notes_edit_request("id", "1", "   ");
+        let err = database_service
+            .validate_cell_edit_request(&request)
+            .unwrap_err();
+        assert_eq!(err.to_string(), "Column name is required");
+    }
+
+    #[test]
+    fn test_validate_cell_edit_request_rejects_empty_primary_key_value() {
+        let database_service = in_memory_service_with_tables();
+        let request = notes_edit_request("id", "   ", "title");
+        let err = database_service
+            .validate_cell_edit_request(&request)
+            .unwrap_err();
+        assert_eq!(err.to_string(), "Primary key value is required");
     }
 }
