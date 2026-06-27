@@ -279,16 +279,18 @@ impl DatabaseService {
             "UPDATE \"{escaped_table_name}\" SET \"{escaped_target_column}\" = ? WHERE \"{escaped_primary_key_column}\" = ?"
         );
 
-        let rows_updated = self
-            .connection
-            .execute(
-                &sql,
-                rusqlite::params![
-                    request.new_value.as_deref(),
-                    request.primary_key_value.as_str(),
-                ],
-            )
-            .map_err(sqlite_err)?;
+
+        let transaction = self.connection.unchecked_transaction().map_err(sqlite_err)?;
+        
+        let rows_updated = transaction.execute(
+            &sql,
+            rusqlite::params![
+                request.new_value.as_deref(),
+                request.primary_key_value.as_str(),
+            ],
+        ).map_err(sqlite_err)?;
+
+        transaction.commit().map_err(sqlite_err)?;
 
         Ok(CellEditResult::new(rows_updated as i64))
     }
@@ -652,12 +654,21 @@ mod tests {
         primary_key_value: &str,
         target_column: &str,
     ) -> CellEditRequest {
+        notes_edit_request_with_value(primary_key_column, primary_key_value, target_column, Some("New Title".to_string()))
+    }
+
+    fn notes_edit_request_with_value(
+        primary_key_column: &str,
+        primary_key_value: &str,
+        target_column: &str,
+        new_value: Option<String>,
+    ) -> CellEditRequest {
         CellEditRequest::new(
             "notes".to_string(),
             primary_key_column.to_string(),
             primary_key_value.to_string(),
             target_column.to_string(),
-            Some("New Title".to_string()),
+            new_value,
         )
     }
 
@@ -862,5 +873,47 @@ mod tests {
         let request = notes_edit_request("id", "1", "id");
 
         assert!(database_service.update_cell(&request).is_err());
+    }
+
+    #[test]
+    fn test_update_cell_rolls_back_on_not_null_violation() {
+        let database_service = in_memory_service_with_notes_row();
+        let request = notes_edit_request_with_value("id", "1", "title", None);
+
+        assert!(database_service.update_cell(&request).is_err());
+
+        let title: String = database_service
+            .connection
+            .query_row(
+                "SELECT title FROM notes WHERE id = ?",
+                ["1"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(title, "Original Title");
+    }
+
+    #[test]
+    fn test_update_cell_sequential_commits_persist_last_value() {
+        let database_service = in_memory_service_with_notes_row();
+        let request1 =
+            notes_edit_request_with_value("id", "1", "title", Some("First Update".to_string()));
+        let request2 =
+            notes_edit_request_with_value("id", "1", "title", Some("Second Update".to_string()));
+
+        let result1 = database_service.update_cell(&request1).unwrap();
+        let result2 = database_service.update_cell(&request2).unwrap();
+        assert_eq!(result1.rows_updated, 1);
+        assert_eq!(result2.rows_updated, 1);
+
+        let title: String = database_service
+            .connection
+            .query_row(
+                "SELECT title FROM notes WHERE id = ?",
+                ["1"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(title, "Second Update");
     }
 }
