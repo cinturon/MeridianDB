@@ -13,7 +13,17 @@ use crate::models::TableInfo;
 use crate::models::ColumnInfo;
 use crate::models::TablePreview;
 use crate::models::QueryResult;
+use crate::models::ChangeHistoryEntry;
 use std::path::PathBuf;
+
+#[tauri::command]
+fn get_change_history(path: &str) -> Result<Vec<ChangeHistoryEntry>, AppError> {
+    let database_service =
+        DatabaseService::new(PathBuf::from(path)).map_err(|e| AppError::Message(e.to_string()))?;
+    database_service
+        .get_change_history()
+        .map_err(|e| AppError::Message(e.to_string()))
+}
 
 
 #[tauri::command]
@@ -173,6 +183,7 @@ pub fn run() {
             query,
             get_primary_key_column,
             update_cell,
+            get_change_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
