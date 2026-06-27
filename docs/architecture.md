@@ -50,6 +50,7 @@ MeridianDB uses SQLite because it is an embedded, file-based database—users op
 **Responsible for:**
 - Opening SQLite connections (in-memory for tests, file paths for real databases)
 - Running queries such as `SELECT 1`, listing tables from `sqlite_master`, and inspecting schemas with `PRAGMA table_info`
+- Validating and executing cell edits inside explicit transactions (see [Safe Cell Editing](safe-cell-editing.md))
 - Mapping SQLite rows into Rust structs
 - Returning `Result` values that commands can turn into user-facing errors
 
@@ -81,6 +82,10 @@ Tauri commands stay thin: they construct or receive a service, call one method, 
 - Table browsing or schema inspection (later lessons)
 
 As more operations arrive (list tables, inspect schema), they belong on `DatabaseService` or as helpers the service calls—not duplicated in `lib.rs`.
+
+## Safe cell editing
+
+MeridianDB's first write path edits a single preview cell through draft state, user confirmation, backend validation, and an explicit SQLite transaction. See [Safe Cell Editing](safe-cell-editing.md) for the full workflow, limitations, and key files.
 
 ## Models
 
