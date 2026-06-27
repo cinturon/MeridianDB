@@ -214,3 +214,19 @@ impl CellEditRequest {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct CellEditResult {
+    pub rows_updated: i64,
+}
+
+impl CellEditResult {
+    pub fn new(rows_updated: i64) -> Self {
+        Self { rows_updated }
+    }
+}
+
+impl Display for CellEditResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "CellEditResult {{ rows_updated: {} }}", self.rows_updated)
+    }
+}

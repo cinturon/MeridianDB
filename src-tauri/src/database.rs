@@ -1,11 +1,12 @@
 use crate::errors::AppError;
+use crate::models::CellEditRequest;
 use crate::models::ColumnInfo;
 use crate::models::DatabaseHealth;
 use crate::models::Note;
 use crate::models::QueryResult;
 use crate::models::TableInfo;
 use crate::models::TablePreview;
-use crate::models::CellEditRequest;
+use crate::models::CellEditResult;
 use rusqlite::Connection;
 use rusqlite::Statement;
 use std::path::PathBuf;
@@ -196,16 +197,14 @@ impl DatabaseService {
 
         let columns = self.inspect_table_schema(table_name)?;
 
-        let primary_key_column: Vec<&ColumnInfo> = columns
-            .iter()
-            .filter(|column| column.primary_key)
-            .collect();
+        let primary_key_column: Vec<&ColumnInfo> =
+            columns.iter().filter(|column| column.primary_key).collect();
 
         match primary_key_column.len() {
             0 => Ok(None),
             1 => Ok(Some(primary_key_column[0].name.clone())),
             _ => Ok(None),
-        }    
+        }
     }
 
     pub fn validate_cell_edit_request(&self, request: &CellEditRequest) -> Result<(), AppError> {
@@ -213,10 +212,14 @@ impl DatabaseService {
             return Err(AppError::Message("Table name is required".to_string()));
         }
         if request.primary_key_column.trim().is_empty() {
-            return Err(AppError::Message("Primary key column is required".to_string()));
+            return Err(AppError::Message(
+                "Primary key column is required".to_string(),
+            ));
         }
         if request.primary_key_value.trim().is_empty() {
-            return Err(AppError::Message("Primary key value is required".to_string()));
+            return Err(AppError::Message(
+                "Primary key value is required".to_string(),
+            ));
         }
         if request.target_column.trim().is_empty() {
             return Err(AppError::Message("Column name is required".to_string()));
@@ -252,7 +255,10 @@ impl DatabaseService {
         }
 
         let columns = self.inspect_table_schema(&request.table_name)?;
-        if !columns.iter().any(|column| column.name == request.target_column) {
+        if !columns
+            .iter()
+            .any(|column| column.name == request.target_column)
+        {
             return Err(AppError::Message(format!(
                 "Column '{}' not found in table '{}'",
                 request.target_column, request.table_name
@@ -260,6 +266,31 @@ impl DatabaseService {
         }
 
         Ok(())
+    }
+
+    pub fn update_cell(&self, request: &CellEditRequest) -> Result<CellEditResult, AppError> {
+        self.validate_cell_edit_request(request)?;
+
+        let escaped_table_name = request.table_name.replace('"', "\"\"");
+        let escaped_primary_key_column = request.primary_key_column.replace('"', "\"\"");
+        let escaped_target_column = request.target_column.replace('"', "\"\"");
+
+        let sql = format!(
+            "UPDATE \"{escaped_table_name}\" SET \"{escaped_target_column}\" = ? WHERE \"{escaped_primary_key_column}\" = ?"
+        );
+
+        let rows_updated = self
+            .connection
+            .execute(
+                &sql,
+                rusqlite::params![
+                    request.new_value.as_deref(),
+                    request.primary_key_value.as_str(),
+                ],
+            )
+            .map_err(sqlite_err)?;
+
+        Ok(CellEditResult::new(rows_updated as i64))
     }
 }
 
@@ -634,7 +665,9 @@ mod tests {
     fn test_validate_cell_edit_request_accepts_valid_edit() {
         let database_service = in_memory_service_with_tables();
         let request = notes_edit_request("id", "1", "title");
-        assert!(database_service.validate_cell_edit_request(&request).is_ok());
+        assert!(database_service
+            .validate_cell_edit_request(&request)
+            .is_ok());
     }
 
     #[test]
@@ -670,10 +703,7 @@ mod tests {
         let err = database_service
             .validate_cell_edit_request(&request)
             .unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "Cannot edit primary key column 'id'"
-        );
+        assert_eq!(err.to_string(), "Cannot edit primary key column 'id'");
     }
 
     #[test]
@@ -739,5 +769,98 @@ mod tests {
             .validate_cell_edit_request(&request)
             .unwrap_err();
         assert_eq!(err.to_string(), "Primary key value is required");
+    }
+
+    fn in_memory_service_with_notes_row() -> DatabaseService {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute(
+                "CREATE TABLE notes (id INTEGER PRIMARY KEY, title TEXT NOT NULL)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO notes (id, title) VALUES (1, 'Original Title')",
+                [],
+            )
+            .unwrap();
+        DatabaseService::from_connection(connection)
+    }
+
+    #[test]
+    fn test_update_cell_updates_one_row_and_readback() {
+        let database_service = in_memory_service_with_notes_row();
+        let request = CellEditRequest::new(
+            "notes".to_string(),
+            "id".to_string(),
+            "1".to_string(),
+            "title".to_string(),
+            Some("Updated Title".to_string()),
+        );
+
+        let result = database_service.update_cell(&request).unwrap();
+        assert_eq!(result.rows_updated, 1);
+
+        let title: String = database_service
+            .connection
+            .query_row(
+                "SELECT title FROM notes WHERE id = ?",
+                ["1"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(title, "Updated Title");
+    }
+
+    #[test]
+    fn test_update_cell_rejects_invalid_request_without_updating() {
+        let database_service = in_memory_service_with_notes_row();
+        let request = notes_edit_request("id", "1", "ghost");
+
+        assert!(database_service.update_cell(&request).is_err());
+
+        let title: String = database_service
+            .connection
+            .query_row(
+                "SELECT title FROM notes WHERE id = ?",
+                ["1"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(title, "Original Title");
+    }
+
+    #[test]
+    fn test_update_cell_returns_zero_rows_for_missing_primary_key() {
+        let database_service = in_memory_service_with_notes_row();
+        let request = CellEditRequest::new(
+            "notes".to_string(),
+            "id".to_string(),
+            "999".to_string(),
+            "title".to_string(),
+            Some("Updated Title".to_string()),
+        );
+
+        let result = database_service.update_cell(&request).unwrap();
+        assert_eq!(result.rows_updated, 0);
+
+        let title: String = database_service
+            .connection
+            .query_row(
+                "SELECT title FROM notes WHERE id = ?",
+                ["1"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(title, "Original Title");
+    }
+
+    #[test]
+    fn test_update_cell_rejects_primary_key_edit() {
+        let database_service = in_memory_service_with_notes_row();
+        let request = notes_edit_request("id", "1", "id");
+
+        assert!(database_service.update_cell(&request).is_err());
     }
 }
