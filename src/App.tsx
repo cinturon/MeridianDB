@@ -50,6 +50,20 @@ export interface CellEditResult {
   rows_updated: number;
 }
 
+export interface ChangeHistoryEntry {
+  timestamp: string;
+  cell_edit_request: CellEditRequest;
+}
+
+export interface CellEditRequest {
+  table_name: string;
+  primary_key_column: string;
+  primary_key_value: string;
+  target_column: string;
+  new_value: string | null;
+  original_value: string | null;
+}
+
 
 const DEFAULT_QUERY =
   "SELECT name, type FROM sqlite_master WHERE type = 'table' ORDER BY name";
@@ -59,12 +73,21 @@ type TablesState = "idle" | "loading" | "success" | "empty" | "error";
 type SchemaState = "idle" | "loading" | "success" | "empty" | "error";
 type PreviewState = "idle" | "loading" | "success" | "empty" | "error";
 type EditabilityState = "idle" | "loading" | "ready";
+type ChangeHistoryState = "idle" | "loading" | "success" | "empty" | "error";
 
 function formatCellDisplay(value: string | null): string {
   if (value === null || value === "") {
     return "—";
   }
   return value;
+}
+
+function formatHistoryTimestamp(timestamp: string): string {
+  const seconds = Number(timestamp);
+  if (Number.isNaN(seconds)) {
+    return timestamp;
+  }
+  return new Date(seconds * 1000).toLocaleString();
 }
 
 function App() {
@@ -92,6 +115,9 @@ function App() {
   const [affectedRows, setAffectedRows] = useState<number>(0);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [changeHistory, setChangeHistory] = useState<ChangeHistoryEntry[]>([]);
+  const [changeHistoryState, setChangeHistoryState] = useState<ChangeHistoryState>("idle");
+  const [changeHistoryError, setChangeHistoryError] = useState<string | null>(null);
 
   function handleRequestSave() {
     if (!draftCellEdit) {
@@ -127,6 +153,7 @@ function App() {
       if (selectedTable) {
         await handleSelectTable(selectedTable);
       }
+      await loadChangeHistory(databasePath.trim());
       setDraftError(null);
     } catch (error) {
       const parsed = parseAppError(error);
@@ -163,6 +190,24 @@ function App() {
 
   function handleDraftChange(newValue: string) {
     setDraftCellEdit((draft) => (draft ? { ...draft, newValue } : null));
+  }
+
+  async function loadChangeHistory(path: string) {
+    setChangeHistoryState("loading");
+    setChangeHistoryError(null);
+
+    try {
+      const history = await invoke<ChangeHistoryEntry[]>("get_change_history", { path });
+      setChangeHistory(history);
+      setChangeHistoryState(history.length === 0 ? "empty" : "success");
+    } catch (err) {
+      const parsed = parseAppError(err);
+      setChangeHistoryState("error");
+      setChangeHistoryError(
+        parsed ? displayAppErrorMessage(parsed) : "Could not load change history.",
+      );
+      setChangeHistory([]);
+    }
   }
 
   useEffect(() => {
@@ -261,11 +306,15 @@ function App() {
     setPrimaryKeyColumn(null);
     setEditabilityState("idle");
     clearDraftCellEdit();
+    setChangeHistory([]);
+    setChangeHistoryState("idle");
+    setChangeHistoryError(null);
 
     try {
       const result = await invoke<TableInfo[]>("list_tables", { path });
       setTables(result);
       setTablesState(result.length === 0 ? "empty" : "success");
+      await loadChangeHistory(path);
     } catch (err) {
       const parsed = parseAppError(err);
       setTablesState("error");
@@ -501,13 +550,13 @@ function App() {
                 {draftCellEdit &&
                   draftCellEdit.tableName === selectedTable.name &&
                   !showSaveConfirm && (
-                  <p className="preview-meta draft-edit-hint">
-                    Draft edit on <code>{draftCellEdit.targetColumn}</code>
-                    {draftCellEdit.newValue !== draftCellEdit.originalValue
-                      ? " (unsaved changes)"
-                      : " (not saved)"}
-                  </p>
-                )}
+                    <p className="preview-meta draft-edit-hint">
+                      Draft edit on <code>{draftCellEdit.targetColumn}</code>
+                      {draftCellEdit.newValue !== draftCellEdit.originalValue
+                        ? " (unsaved changes)"
+                        : " (not saved)"}
+                    </p>
+                  )}
                 {showSaveConfirm && draftCellEdit && (
                   <div
                     className="save-confirm-panel"
@@ -569,6 +618,65 @@ function App() {
               </>
             )}
           </section>
+        )}
+      </section>
+
+      <section
+        className="change-history-panel"
+        aria-labelledby="change-history-heading"
+        aria-live="polite"
+      >
+        <h2 id="change-history-heading">Change History</h2>
+        <p className="panel-hint">
+          Recent cell edits for the open database, newest first.
+        </p>
+
+        {changeHistoryState === "idle" && (
+          <p className="status-message">
+            List tables on a database to load change history.
+          </p>
+        )}
+
+        {changeHistoryState === "loading" && (
+          <p className="status-message">Loading change history…</p>
+        )}
+
+        {changeHistoryState === "error" && changeHistoryError && (
+          <p className="status-message error">{changeHistoryError}</p>
+        )}
+
+        {changeHistoryState === "empty" && (
+          <p className="status-message">No edits recorded yet.</p>
+        )}
+
+        {changeHistoryState === "success" && (
+          <ul className="change-history-list">
+            {changeHistory.map((entry, index) => (
+              <li key={`${entry.timestamp}-${index}`} className="change-history-item">
+                <p className="change-history-meta">
+                  <time dateTime={entry.timestamp}>
+                    {formatHistoryTimestamp(entry.timestamp)}
+                  </time>
+                  {" · "}
+                  <span className="change-history-table">
+                    {entry.cell_edit_request.table_name}
+                  </span>
+                  {" · "}
+                  <code>{entry.cell_edit_request.target_column}</code>
+                </p>
+                <dl className="change-history-values">
+                  <div>
+                    <dt>Old value</dt>
+                    <dd>{formatCellDisplay(entry.cell_edit_request.original_value)}</dd>
+                  </div>
+                  <div>
+                    <dt>New value</dt>
+                    <dd>{formatCellDisplay(entry.cell_edit_request.new_value)}</dd>
+                  </div>
+                </dl>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 
