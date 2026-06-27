@@ -119,6 +119,7 @@ function App() {
           primary_key_value: draftCellEdit.primaryKeyValue,
           target_column: draftCellEdit.targetColumn,
           new_value: draftCellEdit.newValue,
+          original_value: draftCellEdit.originalValue,
         },
       });
       setShowSaveConfirm(false);

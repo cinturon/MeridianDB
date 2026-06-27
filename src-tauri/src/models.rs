@@ -182,13 +182,14 @@ impl Display for QueryResult {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct CellEditRequest {
     pub table_name: String,
     pub primary_key_column: String,
     pub primary_key_value: String,
     pub target_column: String,
     pub new_value: Option<String>,
+    pub original_value: Option<String>,
 }
 
 impl CellEditRequest {
@@ -198,6 +199,7 @@ impl CellEditRequest {
         primary_key_value: String,
         target_column: String,
         new_value: Option<String>,
+        original_value: Option<String>,
     ) -> Self {
         Self {
             table_name,
@@ -205,6 +207,7 @@ impl CellEditRequest {
             primary_key_value,
             target_column,
             new_value,
+            original_value,
         }
     }
 }
@@ -233,32 +236,17 @@ impl Display for CellEditResult {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct ChangeHistoryEntry {
     pub timestamp: String,
-    pub table_name: String,
-    pub primary_key_column: String,
-    pub primary_key_value: String,
-    pub target_column: String,
-    pub new_value: Option<String>,
-    pub original_value: Option<String>,
+    pub cell_edit_request: CellEditRequest,
 }
 
 impl ChangeHistoryEntry {
     pub fn new(
         timestamp: String,
-        table_name: String,
-        primary_key_column: String,
-        primary_key_value: String,
-        target_column: String,
-        new_value: Option<String>,
-        original_value: Option<String>,
+        cell_edit_request: CellEditRequest,
     ) -> Self {
         Self {
             timestamp,
-            table_name,
-            primary_key_column,
-            primary_key_value,
-            target_column,
-            new_value,
-            original_value,
+            cell_edit_request
         }
     }
 }

@@ -1,16 +1,19 @@
 use crate::errors::AppError;
 use crate::models::CellEditRequest;
+use crate::models::CellEditResult;
+use crate::models::ChangeHistoryEntry;
 use crate::models::ColumnInfo;
 use crate::models::DatabaseHealth;
 use crate::models::Note;
 use crate::models::QueryResult;
 use crate::models::TableInfo;
 use crate::models::TablePreview;
-use crate::models::CellEditResult;
 use rusqlite::Connection;
 use rusqlite::Statement;
 use std::path::PathBuf;
 use std::time::Instant;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 pub struct DatabaseService {
     connection: Connection,
 }
@@ -279,16 +282,34 @@ impl DatabaseService {
             "UPDATE \"{escaped_table_name}\" SET \"{escaped_target_column}\" = ? WHERE \"{escaped_primary_key_column}\" = ?"
         );
 
+        ensure_change_history_table(&self.connection)?;
 
-        let transaction = self.connection.unchecked_transaction().map_err(sqlite_err)?;
-        
-        let rows_updated = transaction.execute(
-            &sql,
-            rusqlite::params![
-                request.new_value.as_deref(),
-                request.primary_key_value.as_str(),
-            ],
-        ).map_err(sqlite_err)?;
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(sqlite_err)?;
+
+        let rows_updated = transaction
+            .execute(
+                &sql,
+                rusqlite::params![
+                    request.new_value.as_deref(),
+                    request.primary_key_value.as_str(),
+                ],
+            )
+            .map_err(sqlite_err)?;
+
+        if rows_updated > 0 {
+            let entry = ChangeHistoryEntry::new(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+                    .to_string(),
+                request.clone(),
+            );
+            insert_change_history(&transaction, &entry)?;
+        }
 
         transaction.commit().map_err(sqlite_err)?;
 
@@ -319,8 +340,49 @@ fn value_to_string(value: rusqlite::types::Value) -> String {
     }
 }
 
+const CHANGE_HISTORY_INSERT: &str = "INSERT INTO meridian_change_history (
+    timestamp,
+    table_name,
+    primary_key_column,
+    primary_key_value,
+    target_column,
+    new_value,
+    original_value
+) VALUES (?, ?, ?, ?, ?, ?, ?)";
+
+fn insert_change_history(
+    conn: &Connection,
+    entry: &ChangeHistoryEntry,
+) -> Result<(), AppError> {
+    let new_value = entry
+        .cell_edit_request
+        .new_value
+        .clone()
+        .unwrap_or_else(|| "NULL".to_string());
+    let original_value = entry
+        .cell_edit_request
+        .original_value
+        .clone()
+        .unwrap_or_else(|| "NULL".to_string());
+
+    conn.execute(
+        CHANGE_HISTORY_INSERT,
+        rusqlite::params![
+            entry.timestamp,
+            entry.cell_edit_request.table_name,
+            entry.cell_edit_request.primary_key_column,
+            entry.cell_edit_request.primary_key_value,
+            entry.cell_edit_request.target_column,
+            new_value,
+            original_value,
+        ],
+    )
+    .map_err(sqlite_err)?;
+
+    Ok(())
+}
+
 pub fn ensure_change_history_table(conn: &Connection) -> Result<(), AppError> {
-    
     conn.execute(
         "CREATE TABLE IF NOT EXISTS meridian_change_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -333,9 +395,17 @@ pub fn ensure_change_history_table(conn: &Connection) -> Result<(), AppError> {
             original_value TEXT NOT NULL
         )",
         [],
-    ).map_err(|e| AppError::Message(e.to_string()))?;
+    )
+    .map_err(|e| AppError::Message(e.to_string()))?;
 
     Ok(())
+}
+
+pub fn record_change_history(
+    conn: &Connection,
+    entry: &ChangeHistoryEntry,
+) -> Result<(), AppError> {
+    insert_change_history(conn, entry)
 }
 
 pub fn create_notes_table(title: &str, content: &str) -> Result<Note, AppError> {
@@ -673,7 +743,12 @@ mod tests {
         primary_key_value: &str,
         target_column: &str,
     ) -> CellEditRequest {
-        notes_edit_request_with_value(primary_key_column, primary_key_value, target_column, Some("New Title".to_string()))
+        notes_edit_request_with_value(
+            primary_key_column,
+            primary_key_value,
+            target_column,
+            Some("New Title".to_string()),
+        )
     }
 
     fn notes_edit_request_with_value(
@@ -688,6 +763,7 @@ mod tests {
             primary_key_value.to_string(),
             target_column.to_string(),
             new_value,
+            Some("Original Title".to_string()),
         )
     }
 
@@ -708,6 +784,7 @@ mod tests {
             "id".to_string(),
             "1".to_string(),
             "title".to_string(),
+            None,
             None,
         );
         let err = database_service
@@ -745,6 +822,7 @@ mod tests {
             "1".to_string(),
             "name".to_string(),
             None,
+            None,
         );
         let err = database_service
             .validate_cell_edit_request(&request)
@@ -773,6 +851,7 @@ mod tests {
             "id".to_string(),
             "1".to_string(),
             "title".to_string(),
+            None,
             None,
         );
         let err = database_service
@@ -827,6 +906,7 @@ mod tests {
             "1".to_string(),
             "title".to_string(),
             Some("Updated Title".to_string()),
+            Some("Original Title".to_string()),
         );
 
         let result = database_service.update_cell(&request).unwrap();
@@ -834,11 +914,9 @@ mod tests {
 
         let title: String = database_service
             .connection
-            .query_row(
-                "SELECT title FROM notes WHERE id = ?",
-                ["1"],
-                |row| row.get(0),
-            )
+            .query_row("SELECT title FROM notes WHERE id = ?", ["1"], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(title, "Updated Title");
     }
@@ -852,11 +930,9 @@ mod tests {
 
         let title: String = database_service
             .connection
-            .query_row(
-                "SELECT title FROM notes WHERE id = ?",
-                ["1"],
-                |row| row.get(0),
-            )
+            .query_row("SELECT title FROM notes WHERE id = ?", ["1"], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(title, "Original Title");
     }
@@ -870,6 +946,7 @@ mod tests {
             "999".to_string(),
             "title".to_string(),
             Some("Updated Title".to_string()),
+            None,
         );
 
         let result = database_service.update_cell(&request).unwrap();
@@ -877,11 +954,9 @@ mod tests {
 
         let title: String = database_service
             .connection
-            .query_row(
-                "SELECT title FROM notes WHERE id = ?",
-                ["1"],
-                |row| row.get(0),
-            )
+            .query_row("SELECT title FROM notes WHERE id = ?", ["1"], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(title, "Original Title");
     }
@@ -903,11 +978,9 @@ mod tests {
 
         let title: String = database_service
             .connection
-            .query_row(
-                "SELECT title FROM notes WHERE id = ?",
-                ["1"],
-                |row| row.get(0),
-            )
+            .query_row("SELECT title FROM notes WHERE id = ?", ["1"], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(title, "Original Title");
     }
@@ -927,11 +1000,9 @@ mod tests {
 
         let title: String = database_service
             .connection
-            .query_row(
-                "SELECT title FROM notes WHERE id = ?",
-                ["1"],
-                |row| row.get(0),
-            )
+            .query_row("SELECT title FROM notes WHERE id = ?", ["1"], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(title, "Second Update");
     }
@@ -950,5 +1021,72 @@ mod tests {
             [],
         ).unwrap();
         assert!(ensure_change_history_table(&connection).is_ok());
+    }
+
+    #[test]
+    fn test_update_cell_records_change_history_row() {
+        let database_service = in_memory_service_with_notes_row();
+        let request = CellEditRequest::new(
+            "notes".to_string(),
+            "id".to_string(),
+            "1".to_string(),
+            "title".to_string(),
+            Some("Updated Title".to_string()),
+            Some("Original Title".to_string()),
+        );
+
+        database_service.update_cell(&request).unwrap();
+
+        let (table_name, pk_col, pk_val, target_col, new_val, orig_val): (
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+        ) = database_service
+            .connection
+            .query_row(
+                "SELECT table_name, primary_key_column, primary_key_value, target_column, new_value, original_value
+                 FROM meridian_change_history
+                 LIMIT 1",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .unwrap();
+
+        assert_eq!(table_name, "notes");
+        assert_eq!(pk_col, "id");
+        assert_eq!(pk_val, "1");
+        assert_eq!(target_col, "title");
+        assert_eq!(new_val, "Updated Title");
+        assert_eq!(orig_val, "Original Title");
+    }
+
+    #[test]
+    fn test_update_cell_failure_does_not_record_change_history() {
+        let database_service = in_memory_service_with_notes_row();
+        let request = notes_edit_request_with_value("id", "1", "title", None);
+
+        assert!(database_service.update_cell(&request).is_err());
+
+        let count: i64 = database_service
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM meridian_change_history",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
     }
 }
