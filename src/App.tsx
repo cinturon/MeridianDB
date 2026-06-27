@@ -60,6 +60,13 @@ type SchemaState = "idle" | "loading" | "success" | "empty" | "error";
 type PreviewState = "idle" | "loading" | "success" | "empty" | "error";
 type EditabilityState = "idle" | "loading" | "ready";
 
+function formatCellDisplay(value: string | null): string {
+  if (value === null || value === "") {
+    return "—";
+  }
+  return value;
+}
+
 function App() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [databasePath, setDatabasePath] = useState("");
@@ -83,13 +90,27 @@ function App() {
   const [draftCellEdit, setDraftCellEdit] = useState<DraftCellEdit | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [affectedRows, setAffectedRows] = useState<number>(0);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  async function handleSaveDraft() {
+  function handleRequestSave() {
     if (!draftCellEdit) {
       return;
     }
+    setDraftError(null);
+    setShowSaveConfirm(true);
+  }
+
+  function handleCancelSaveConfirm() {
+    setShowSaveConfirm(false);
+  }
+
+  async function handleConfirmSave() {
+    if (!draftCellEdit || saving) {
+      return;
+    }
+    setSaving(true);
     try {
-      
       const result = await invoke<CellEditResult>("update_cell", {
         path: databasePath.trim(),
         request: {
@@ -100,8 +121,8 @@ function App() {
           new_value: draftCellEdit.newValue,
         },
       });
+      setShowSaveConfirm(false);
       setAffectedRows(result.rows_updated);
-      
       if (selectedTable) {
         await handleSelectTable(selectedTable);
       }
@@ -109,11 +130,14 @@ function App() {
     } catch (error) {
       const parsed = parseAppError(error);
       setDraftError(parsed ? displayAppErrorMessage(parsed) : "Could not save draft.");
+    } finally {
+      setSaving(false);
     }
   }
 
   function clearDraftCellEdit() {
     setDraftCellEdit(null);
+    setShowSaveConfirm(false);
   }
 
   function handleStartCellEdit(
@@ -125,6 +149,7 @@ function App() {
       return;
     }
 
+    setShowSaveConfirm(false);
     setDraftCellEdit({
       tableName: selectedTable.name,
       primaryKeyColumn,
@@ -472,7 +497,9 @@ function App() {
                 {draftError && (
                   <p className="status-message error">{draftError}</p>
                 )}
-                {draftCellEdit && draftCellEdit.tableName === selectedTable.name && (
+                {draftCellEdit &&
+                  draftCellEdit.tableName === selectedTable.name &&
+                  !showSaveConfirm && (
                   <p className="preview-meta draft-edit-hint">
                     Draft edit on <code>{draftCellEdit.targetColumn}</code>
                     {draftCellEdit.newValue !== draftCellEdit.originalValue
@@ -480,18 +507,63 @@ function App() {
                       : " (not saved)"}
                   </p>
                 )}
+                {showSaveConfirm && draftCellEdit && (
+                  <div
+                    className="save-confirm-panel"
+                    role="dialog"
+                    aria-labelledby="save-confirm-heading"
+                    aria-live="polite"
+                  >
+                    <h4 id="save-confirm-heading">Confirm cell change</h4>
+                    <p className="save-confirm-summary">
+                      Change <code>{draftCellEdit.targetColumn}</code> in{" "}
+                      <code>{draftCellEdit.tableName}</code> where{" "}
+                      <code>{draftCellEdit.primaryKeyColumn}</code> is{" "}
+                      <code>{draftCellEdit.primaryKeyValue}</code>?
+                    </p>
+                    <dl className="save-confirm-details">
+                      <div>
+                        <dt>Original value</dt>
+                        <dd>{formatCellDisplay(draftCellEdit.originalValue)}</dd>
+                      </div>
+                      <div>
+                        <dt>New value</dt>
+                        <dd>{formatCellDisplay(draftCellEdit.newValue)}</dd>
+                      </div>
+                    </dl>
+                    <div className="save-confirm-actions">
+                      <button
+                        type="button"
+                        className="save-confirm-button"
+                        onClick={handleConfirmSave}
+                        disabled={saving}
+                      >
+                        {saving ? "Saving…" : "Confirm save"}
+                      </button>
+                      <button
+                        type="button"
+                        className="save-confirm-cancel"
+                        onClick={handleCancelSaveConfirm}
+                        disabled={saving}
+                      >
+                        Back to editing
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <DataGrid
                   columns={tablePreview.columns}
                   rows={tablePreview.rows}
                   editable={editabilityState === "ready" && primaryKeyColumn != null}
                   primaryKeyColumn={primaryKeyColumn}
                   draftCellEdit={draftCellEdit}
+                  saveConfirmPending={showSaveConfirm}
                   onStartEdit={(_rowIndex, columnName, primaryKeyValue, value) =>
                     handleStartCellEdit(columnName, primaryKeyValue, value)
                   }
                   onDraftChange={handleDraftChange}
                   onCancelEdit={clearDraftCellEdit}
-                  onSaveDraft={handleSaveDraft}
+                  onSaveDraft={handleRequestSave}
                 />
               </>
             )}
