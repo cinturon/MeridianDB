@@ -290,9 +290,49 @@ pub struct UndoPreview {
     pub warning_message: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct UndoResult {
+    pub history_entry_id: i64,
+    pub table_name: String,
+    pub primary_key_column: String,
+    pub primary_key_value: String,
+    pub target_column: String,
+    pub restored_value: String,
+    pub rows_updated: i64,
+    pub success: bool,
+    pub message: Option<String>,
+}
+
+
+
+impl UndoResult {
+    pub fn new(
+        history_entry_id: i64,
+        table_name: String,
+        primary_key_column: String,
+        primary_key_value: String,
+        target_column: String,
+        restored_value: String,
+        rows_updated: i64,
+    ) -> Self {
+        Self {
+            history_entry_id,
+            table_name,
+            primary_key_column,
+            primary_key_value,
+            target_column,
+            restored_value,
+            rows_updated,
+            success: true,
+            message: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::UndoPreview;
+    use super::UndoResult;
 
     #[test]
     fn test_undo_preview_safe_construction() {
@@ -332,5 +372,20 @@ mod tests {
         assert!(!preview.is_safe_to_undo);
         assert_eq!(preview.restored_value, "Ada");
         assert!(preview.warning_message.is_some());
+        
+    }
+
+    #[test]
+    fn test_undo_result_new() {
+        let result = UndoResult::new(1, "employees".into(), "id".into(), "3".into(), "name".into(), "Ada".into(), 1);
+        assert_eq!(result.history_entry_id, 1);
+        assert_eq!(result.table_name, "employees");
+        assert_eq!(result.primary_key_column, "id");
+        assert_eq!(result.primary_key_value, "3");
+        assert_eq!(result.target_column, "name");
+        assert_eq!(result.restored_value, "Ada");
+        assert_eq!(result.rows_updated, 1);
+        assert!(result.success);
+        assert!(result.message.is_none());
     }
 }
