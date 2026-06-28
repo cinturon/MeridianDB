@@ -115,6 +115,101 @@ function formatHistoryTimestamp(timestamp: string): string {
   return new Date(seconds * 1000).toLocaleString();
 }
 
+type UndoStatusKind =
+  | "preview-loading"
+  | "preview-failed"
+  | "unsafe"
+  | "preview-ready"
+  | "confirm-ready"
+  | "executing"
+  | "succeeded"
+  | "failed";
+
+interface UndoStatus {
+  kind: UndoStatusKind;
+  message: string;
+}
+
+function resolveUndoStatus(input: {
+  undoing: boolean;
+  undoConfirmError: string | null;
+  undoSuccessMessage: string | null;
+  undoPreviewState: UndoPreviewState;
+  undoPreviewError: string | null;
+  undoPreview: UndoPreview | null;
+  showUndoConfirm: boolean;
+}): UndoStatus | null {
+  const {
+    undoing,
+    undoConfirmError,
+    undoSuccessMessage,
+    undoPreviewState,
+    undoPreviewError,
+    undoPreview,
+    showUndoConfirm,
+  } = input;
+
+  if (undoing) {
+    return {
+      kind: "executing",
+      message: "Restoring the previous cell value…",
+    };
+  }
+
+  if (undoConfirmError) {
+    return {
+      kind: "failed",
+      message: `Undo failed: ${undoConfirmError}`,
+    };
+  }
+
+  if (undoSuccessMessage && undoPreviewState !== "success") {
+    return {
+      kind: "succeeded",
+      message: undoSuccessMessage,
+    };
+  }
+
+  if (undoPreviewState === "loading") {
+    return {
+      kind: "preview-loading",
+      message: "Loading undo preview…",
+    };
+  }
+
+  if (undoPreviewState === "error" && undoPreviewError) {
+    return {
+      kind: "preview-failed",
+      message: `Could not load undo preview: ${undoPreviewError}`,
+    };
+  }
+
+  if (undoPreviewState === "success" && undoPreview && !undoPreview.is_safe_to_undo) {
+    return {
+      kind: "unsafe",
+      message:
+        undoPreview.warning_message ??
+        "Undo blocked: this cell has changed since this history entry was recorded.",
+    };
+  }
+
+  if (undoPreviewState === "success" && undoPreview?.is_safe_to_undo && showUndoConfirm) {
+    return {
+      kind: "confirm-ready",
+      message: "Ready to restore the value below. Confirm only if the details look correct.",
+    };
+  }
+
+  if (undoPreviewState === "success" && undoPreview?.is_safe_to_undo) {
+    return {
+      kind: "preview-ready",
+      message: "This undo looks safe. Preview only — no data has been changed yet.",
+    };
+  }
+
+  return null;
+}
+
 function App() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [databasePath, setDatabasePath] = useState("");
@@ -193,12 +288,12 @@ function App() {
       setAffectedRows(result.rows_updated);
       setUndoSuccessMessage(
         result.message ??
-          `Restored ${result.target_column} to ${formatCellDisplay(result.restored_value)}.`,
+          `Undo complete: restored ${result.target_column} to ${formatCellDisplay(result.restored_value)}.`,
       );
       undoSucceeded = true;
     } catch (error) {
       const parsed = parseAppError(error);
-      setUndoConfirmError(parsed ? displayAppErrorMessage(parsed) : "Could not undo.");
+      setUndoConfirmError(parsed ? displayAppErrorMessage(parsed) : "The undo could not be completed.");
     } finally {
       setUndoing(false);
     }
@@ -523,6 +618,16 @@ function App() {
     }
   }
 
+  const undoStatus = resolveUndoStatus({
+    undoing,
+    undoConfirmError,
+    undoSuccessMessage,
+    undoPreviewState,
+    undoPreviewError,
+    undoPreview,
+    showUndoConfirm,
+  });
+
   return (
     <main className="container">
       <header className="app-header">
@@ -799,8 +904,14 @@ function App() {
             : "Select a table to see edits for that table only."}
         </p>
 
-        {undoSuccessMessage && (
-          <p className="status-message undo-success">{undoSuccessMessage}</p>
+        {undoStatus && (
+          <p
+            className={`undo-status-banner undo-status-banner--${undoStatus.kind}`}
+            role={undoStatus.kind === "unsafe" || undoStatus.kind === "failed" ? "alert" : "status"}
+            aria-live="polite"
+          >
+            {undoStatus.message}
+          </p>
         )}
 
         {changeHistoryState === "idle" && (
@@ -879,35 +990,30 @@ function App() {
               })}
             </ul>
 
-            {undoPreviewState === "loading" && (
-              <p className="status-message undo-preview-status">Loading undo preview…</p>
-            )}
-
-            {undoPreviewState === "error" && undoPreviewError && (
-              <p className="status-message error undo-preview-status">{undoPreviewError}</p>
-            )}
-
             {undoPreviewState === "success" && undoPreview && (
               <section
                 className={`undo-preview-panel${undoPreview.is_safe_to_undo ? "" : " undo-preview-panel-unsafe"}`}
                 aria-labelledby="undo-preview-heading"
               >
                 <h3 id="undo-preview-heading">Undo preview</h3>
-                <p className="panel-hint">
-                  {showUndoConfirm
-                    ? "Review the change below before confirming."
-                    : "Preview only — no data has been changed yet."}
-                </p>
 
                 {!undoPreview.is_safe_to_undo && (
-                  <p className="status-message error undo-preview-warning" role="alert">
-                    {undoPreview.warning_message ??
-                      "This cell has changed since this history entry was recorded. Undo is not safe."}
+                  <p className="panel-hint">
+                    Undo is blocked for this history entry. Dismiss the preview or pick a newer
+                    entry.
+                  </p>
+                )}
+
+                {undoPreview.is_safe_to_undo && showUndoConfirm && (
+                  <p className="panel-hint">
+                    Confirm only if the restore details below match what you expect.
                   </p>
                 )}
 
                 {undoPreview.is_safe_to_undo && !showUndoConfirm && (
-                  <p className="status-message undo-preview-safe">Safe to undo this change.</p>
+                  <p className="panel-hint">
+                    Values shown below are read from the database. Nothing has been written yet.
+                  </p>
                 )}
 
                 <dl className="undo-preview-values">
@@ -950,9 +1056,6 @@ function App() {
                     <p className="undo-confirm-warning">
                       Undo is another database write. This action will change stored data.
                     </p>
-                    {undoConfirmError && (
-                      <p className="status-message error">{undoConfirmError}</p>
-                    )}
                     <div className="undo-confirm-actions">
                       <button
                         type="button"
