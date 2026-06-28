@@ -779,6 +779,11 @@ button:hover:not(:disabled) {
   background: rgba(148, 163, 184, 0.12);
 }
 
+.undo-success {
+  margin: 0 0 0.75rem;
+  color: #86efac;
+}
+
 .workbench-panel h2 {
   margin: 0 0 0.5rem;
   font-size: 1.125rem;
