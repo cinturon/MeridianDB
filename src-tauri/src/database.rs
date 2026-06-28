@@ -317,7 +317,10 @@ impl DatabaseService {
         Ok(CellEditResult::new(rows_updated as i64))
     }
 
-    pub fn get_change_history(&self, table_name: Option<String>) -> Result<Vec<ChangeHistoryEntry>, AppError> {
+    pub fn get_change_history(
+        &self,
+        table_name: Option<String>,
+    ) -> Result<Vec<ChangeHistoryEntry>, AppError> {
         ensure_change_history_table(&self.connection)?;
 
         let where_clause = if table_name.is_some() {
@@ -335,17 +338,16 @@ impl DatabaseService {
         );
 
         let mut statement = self.connection.prepare(&sql).map_err(sqlite_err)?;
-        
+
         let rows = match table_name {
-            Some(name_value) => {
-                statement.query_map([name_value], ChangeHistoryEntry::from_row)
-            }
-            None => {
-                statement.query_map([], ChangeHistoryEntry::from_row)
-            }
+            Some(name_value) => statement.query_map([name_value], ChangeHistoryEntry::from_row),
+            None => statement.query_map([], ChangeHistoryEntry::from_row),
         };
 
-        let entries = rows.map_err(sqlite_err)?.collect::<Result<Vec<_>, _>>().map_err(sqlite_err)?;
+        let entries = rows
+            .map_err(sqlite_err)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(sqlite_err)?;
 
         Ok(entries)
     }
@@ -447,6 +449,15 @@ impl DatabaseService {
                 other => sqlite_err(other),
             })
     }
+
+    pub fn validate_undo_safety(&self, history_entry_id: i64) -> Result<UndoPreview, AppError> {
+        let preview = self.undo_preview(history_entry_id)?;
+        if preview.is_safe_to_undo {
+            Ok(preview)
+        } else {
+            Err(AppError::Message(preview.warning_message.unwrap()))
+        }
+    }
 }
 
 pub fn get_tables(statement: &mut Statement) -> Result<Vec<TableInfo>, AppError> {
@@ -482,10 +493,7 @@ const CHANGE_HISTORY_INSERT: &str = "INSERT INTO meridian_change_history (
     original_value
 ) VALUES (?, ?, ?, ?, ?, ?, ?)";
 
-fn insert_change_history(
-    conn: &Connection,
-    entry: &ChangeHistoryEntry,
-) -> Result<(), AppError> {
+fn insert_change_history(conn: &Connection, entry: &ChangeHistoryEntry) -> Result<(), AppError> {
     let new_value = entry
         .cell_edit_request
         .new_value
@@ -1213,11 +1221,9 @@ mod tests {
 
         let count: i64 = database_service
             .connection
-            .query_row(
-                "SELECT COUNT(*) FROM meridian_change_history",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM meridian_change_history", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(count, 0);
     }
@@ -1241,8 +1247,14 @@ mod tests {
         assert_eq!(change_history[0].cell_edit_request.primary_key_column, "id");
         assert_eq!(change_history[0].cell_edit_request.primary_key_value, "1");
         assert_eq!(change_history[0].cell_edit_request.target_column, "title");
-        assert_eq!(change_history[0].cell_edit_request.new_value, Some("Updated Title".to_string()));
-        assert_eq!(change_history[0].cell_edit_request.original_value, Some("Original Title".to_string()));
+        assert_eq!(
+            change_history[0].cell_edit_request.new_value,
+            Some("Updated Title".to_string())
+        );
+        assert_eq!(
+            change_history[0].cell_edit_request.original_value,
+            Some("Original Title".to_string())
+        );
     }
 
     #[test]
@@ -1311,10 +1323,7 @@ mod tests {
         assert!(other_history.is_empty());
     }
 
-    fn history_entry_id_for_new_value(
-        database_service: &DatabaseService,
-        new_value: &str,
-    ) -> i64 {
+    fn history_entry_id_for_new_value(database_service: &DatabaseService, new_value: &str) -> i64 {
         database_service
             .connection
             .query_row(
@@ -1328,18 +1337,12 @@ mod tests {
     #[test]
     fn test_undo_preview_is_safe_when_cell_matches_history_new_value() {
         let database_service = in_memory_service_with_notes_row();
-        let request = notes_edit_request_with_value(
-            "id",
-            "1",
-            "title",
-            Some("Updated Title".to_string()),
-        );
+        let request =
+            notes_edit_request_with_value("id", "1", "title", Some("Updated Title".to_string()));
         database_service.update_cell(&request).unwrap();
 
         let history_entry_id = history_entry_id_for_new_value(&database_service, "Updated Title");
-        let preview = database_service
-            .undo_preview(history_entry_id)
-            .unwrap();
+        let preview = database_service.undo_preview(history_entry_id).unwrap();
 
         assert!(preview.is_safe_to_undo);
         assert_eq!(preview.current_value, "Updated Title");
@@ -1350,26 +1353,16 @@ mod tests {
     #[test]
     fn test_undo_preview_warns_when_cell_changed_after_history_entry() {
         let database_service = in_memory_service_with_notes_row();
-        let first_edit = notes_edit_request_with_value(
-            "id",
-            "1",
-            "title",
-            Some("First Update".to_string()),
-        );
+        let first_edit =
+            notes_edit_request_with_value("id", "1", "title", Some("First Update".to_string()));
         database_service.update_cell(&first_edit).unwrap();
         let first_history_id = history_entry_id_for_new_value(&database_service, "First Update");
 
-        let second_edit = notes_edit_request_with_value(
-            "id",
-            "1",
-            "title",
-            Some("Second Update".to_string()),
-        );
+        let second_edit =
+            notes_edit_request_with_value("id", "1", "title", Some("Second Update".to_string()));
         database_service.update_cell(&second_edit).unwrap();
 
-        let preview = database_service
-            .undo_preview(first_history_id)
-            .unwrap();
+        let preview = database_service.undo_preview(first_history_id).unwrap();
 
         assert!(!preview.is_safe_to_undo);
         assert_eq!(preview.current_value, "Second Update");
@@ -1386,9 +1379,54 @@ mod tests {
 
         let error = database_service.undo_preview(999).unwrap_err();
 
+        assert_eq!(error.to_string(), "History entry with id 999 not found");
+    }
+
+    #[test]
+    fn test_validate_undo_safety_passes_when_preview_is_safe() {
+        let database_service = in_memory_service_with_notes_row();
+        let request =
+            notes_edit_request_with_value("id", "1", "title", Some("Updated Title".to_string()));
+        database_service.update_cell(&request).unwrap();
+
+        let history_entry_id = history_entry_id_for_new_value(&database_service, "Updated Title");
+        let preview = database_service
+            .validate_undo_safety(history_entry_id)
+            .unwrap();
+
+        assert!(preview.is_safe_to_undo);
+        assert_eq!(preview.current_value, "Updated Title");
+        assert_eq!(preview.restored_value, "Original Title");
+    }
+
+    #[test]
+    fn test_validate_undo_safety_rejects_stale_preview() {
+        let database_service = in_memory_service_with_notes_row();
+        let first_edit =
+            notes_edit_request_with_value("id", "1", "title", Some("First Update".to_string()));
+        database_service.update_cell(&first_edit).unwrap();
+        let first_history_id = history_entry_id_for_new_value(&database_service, "First Update");
+
+        let second_edit =
+            notes_edit_request_with_value("id", "1", "title", Some("Second Update".to_string()));
+        database_service.update_cell(&second_edit).unwrap();
+
+        let error = database_service
+            .validate_undo_safety(first_history_id)
+            .unwrap_err();
+
         assert_eq!(
             error.to_string(),
-            "History entry with id 999 not found"
+            "Cell value changed since this history entry was recorded."
         );
+    }
+
+    #[test]
+    fn test_validate_undo_safety_propagates_missing_history_entry_error() {
+        let database_service = in_memory_service_with_notes_row();
+
+        let error = database_service.validate_undo_safety(999).unwrap_err();
+
+        assert_eq!(error.to_string(), "History entry with id 999 not found");
     }
 }
