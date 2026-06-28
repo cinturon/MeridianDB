@@ -10,12 +10,22 @@ use crate::models::Note;
 use crate::models::CellEditRequest;
 use crate::models::CellEditResult;
 use crate::models::UndoResult;
+use crate::models::UndoPreview;
 use crate::models::TableInfo;
 use crate::models::ColumnInfo;
 use crate::models::TablePreview;
 use crate::models::QueryResult;
 use crate::models::ChangeHistoryEntry;
 use std::path::PathBuf;
+
+#[tauri::command]
+fn undo_preview(path: &str, history_entry_id: i64) -> Result<UndoPreview, AppError> {
+    let database_service =
+        DatabaseService::new(PathBuf::from(path)).map_err(|e| AppError::Message(e.to_string()))?;
+    database_service
+        .undo_preview(history_entry_id)
+        .map_err(|e| AppError::Message(e.to_string()))
+}
 
 #[tauri::command]
 fn undo_cell(path: &str, history_entry_id: i64) -> Result<UndoResult, AppError> {
@@ -195,6 +205,7 @@ pub fn run() {
             update_cell,
             get_change_history,
             undo_cell,
+            undo_preview,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

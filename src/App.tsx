@@ -51,6 +51,7 @@ export interface CellEditResult {
 }
 
 export interface ChangeHistoryEntry {
+  id: number;
   timestamp: string;
   cell_edit_request: CellEditRequest;
 }
@@ -64,6 +65,18 @@ export interface CellEditRequest {
   original_value: string | null;
 }
 
+export interface UndoPreview {
+  history_entry_id: number;
+  table_name: string;
+  primary_key_column: string;
+  primary_key_value: string;
+  target_column: string;
+  current_value: string;
+  restored_value: string;
+  is_safe_to_undo: boolean;
+  warning_message: string | null;
+}
+
 
 const DEFAULT_QUERY =
   "SELECT name, type FROM sqlite_master WHERE type = 'table' ORDER BY name";
@@ -74,6 +87,7 @@ type SchemaState = "idle" | "loading" | "success" | "empty" | "error";
 type PreviewState = "idle" | "loading" | "success" | "empty" | "error";
 type EditabilityState = "idle" | "loading" | "ready";
 type ChangeHistoryState = "idle" | "loading" | "success" | "empty" | "error";
+type UndoPreviewState = "idle" | "loading" | "success" | "error";
 
 function formatCellDisplay(value: string | null): string {
   if (value === null || value === "") {
@@ -117,6 +131,45 @@ function App() {
   const [changeHistory, setChangeHistory] = useState<ChangeHistoryEntry[]>([]);
   const [changeHistoryState, setChangeHistoryState] = useState<ChangeHistoryState>("idle");
   const [changeHistoryError, setChangeHistoryError] = useState<string | null>(null);
+  const [undoPreview, setUndoPreview] = useState<UndoPreview | null>(null);
+  const [undoPreviewState, setUndoPreviewState] = useState<UndoPreviewState>("idle");
+  const [undoPreviewError, setUndoPreviewError] = useState<string | null>(null);
+  const [previewingHistoryId, setPreviewingHistoryId] = useState<number | null>(null);
+
+  function clearUndoPreview() {
+    setUndoPreview(null);
+    setUndoPreviewState("idle");
+    setUndoPreviewError(null);
+    setPreviewingHistoryId(null);
+  }
+
+  async function handlePreviewUndo(historyEntryId: number) {
+    if (!databasePath.trim()) {
+      setUndoPreviewState("error");
+      setUndoPreviewError("Enter a database path before previewing undo.");
+      return;
+    }
+
+    setPreviewingHistoryId(historyEntryId);
+    setUndoPreviewState("loading");
+    setUndoPreviewError(null);
+    setUndoPreview(null);
+
+    try {
+      const preview = await invoke<UndoPreview>("undo_preview", {
+        path: databasePath.trim(),
+        historyEntryId,
+      });
+      setUndoPreview(preview);
+      setUndoPreviewState("success");
+    } catch (error) {
+      const parsed = parseAppError(error);
+      setUndoPreviewState("error");
+      setUndoPreviewError(parsed ? displayAppErrorMessage(parsed) : "Could not preview undo.");
+    } finally {
+      setPreviewingHistoryId(null);
+    }
+  }
 
   function handleRequestSave() {
     if (!draftCellEdit) {
@@ -254,6 +307,7 @@ function App() {
     setPrimaryKeyColumn(null);
     setEditabilityState("loading");
     clearDraftCellEdit();
+    clearUndoPreview();
 
     await Promise.all([
       invoke<string | null>("get_primary_key_column", {
@@ -333,6 +387,7 @@ function App() {
     setChangeHistory([]);
     setChangeHistoryState("idle");
     setChangeHistoryError(null);
+    clearUndoPreview();
 
     try {
       const result = await invoke<TableInfo[]>("list_tables", { path });
@@ -683,33 +738,111 @@ function App() {
         )}
 
         {changeHistoryState === "success" && (
-          <ul className="change-history-list">
-            {changeHistory.map((entry, index) => (
-              <li key={`${entry.timestamp}-${index}`} className="change-history-item">
-                <p className="change-history-meta">
-                  <time dateTime={entry.timestamp}>
-                    {formatHistoryTimestamp(entry.timestamp)}
-                  </time>
-                  {" · "}
-                  <span className="change-history-table">
-                    {entry.cell_edit_request.table_name}
-                  </span>
-                  {" · "}
-                  <code>{entry.cell_edit_request.target_column}</code>
+          <>
+            <ul className="change-history-list">
+              {changeHistory.map((entry) => {
+                const isPreviewTarget = undoPreview?.history_entry_id === entry.id;
+                const isPreviewLoading = previewingHistoryId === entry.id;
+
+                return (
+                  <li
+                    key={entry.id}
+                    className={`change-history-item${isPreviewTarget ? " change-history-item-active" : ""}`}
+                  >
+                    <p className="change-history-meta">
+                      <time dateTime={entry.timestamp}>
+                        {formatHistoryTimestamp(entry.timestamp)}
+                      </time>
+                      {" · "}
+                      <span className="change-history-table">
+                        {entry.cell_edit_request.table_name}
+                      </span>
+                      {" · "}
+                      <code>{entry.cell_edit_request.target_column}</code>
+                      {" · "}
+                      <span className="change-history-pk">
+                        {entry.cell_edit_request.primary_key_column}=
+                        {entry.cell_edit_request.primary_key_value}
+                      </span>
+                    </p>
+                    <dl className="change-history-values">
+                      <div>
+                        <dt>Old value</dt>
+                        <dd>{formatCellDisplay(entry.cell_edit_request.original_value)}</dd>
+                      </div>
+                      <div>
+                        <dt>New value</dt>
+                        <dd>{formatCellDisplay(entry.cell_edit_request.new_value)}</dd>
+                      </div>
+                    </dl>
+                    <div className="change-history-actions">
+                      <button
+                        type="button"
+                        className="change-history-preview-button"
+                        onClick={() => handlePreviewUndo(entry.id)}
+                        disabled={isPreviewLoading || undoPreviewState === "loading"}
+                        aria-busy={isPreviewLoading}
+                      >
+                        {isPreviewLoading ? "Previewing…" : "Preview undo"}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+
+            {undoPreviewState === "loading" && (
+              <p className="status-message undo-preview-status">Loading undo preview…</p>
+            )}
+
+            {undoPreviewState === "error" && undoPreviewError && (
+              <p className="status-message error undo-preview-status">{undoPreviewError}</p>
+            )}
+
+            {undoPreviewState === "success" && undoPreview && (
+              <section
+                className={`undo-preview-panel${undoPreview.is_safe_to_undo ? "" : " undo-preview-panel-unsafe"}`}
+                aria-labelledby="undo-preview-heading"
+              >
+                <h3 id="undo-preview-heading">Undo preview</h3>
+                <p className="panel-hint">
+                  Preview only — no data has been changed.
                 </p>
-                <dl className="change-history-values">
+
+                {!undoPreview.is_safe_to_undo && (
+                  <p className="status-message error undo-preview-warning" role="alert">
+                    {undoPreview.warning_message ??
+                      "This cell has changed since this history entry was recorded. Undo is not safe."}
+                  </p>
+                )}
+
+                {undoPreview.is_safe_to_undo && (
+                  <p className="status-message undo-preview-safe">Safe to undo this change.</p>
+                )}
+
+                <dl className="undo-preview-values">
                   <div>
-                    <dt>Old value</dt>
-                    <dd>{formatCellDisplay(entry.cell_edit_request.original_value)}</dd>
+                    <dt>Current value</dt>
+                    <dd>{formatCellDisplay(undoPreview.current_value)}</dd>
                   </div>
                   <div>
-                    <dt>New value</dt>
-                    <dd>{formatCellDisplay(entry.cell_edit_request.new_value)}</dd>
+                    <dt>Would restore to</dt>
+                    <dd>{formatCellDisplay(undoPreview.restored_value)}</dd>
+                  </div>
+                  <div>
+                    <dt>Target</dt>
+                    <dd>
+                      <code>{undoPreview.table_name}</code>
+                      {" · "}
+                      <code>{undoPreview.target_column}</code>
+                      {" · "}
+                      {undoPreview.primary_key_column}={undoPreview.primary_key_value}
+                    </dd>
                   </div>
                 </dl>
-              </li>
-            ))}
-          </ul>
+              </section>
+            )}
+          </>
         )}
       </section>
 
