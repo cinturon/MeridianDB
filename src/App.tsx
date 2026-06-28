@@ -77,6 +77,15 @@ export interface UndoPreview {
   warning_message: string | null;
 }
 
+export interface UndoResult {
+  history_entry_id: number;
+  table_name: string;
+  primary_key_column: string;
+  primary_key_value: string;
+  target_column: string;
+  restored_value: string;
+  rows_updated: number;
+}
 
 const DEFAULT_QUERY =
   "SELECT name, type FROM sqlite_master WHERE type = 'table' ORDER BY name";
@@ -135,12 +144,27 @@ function App() {
   const [undoPreviewState, setUndoPreviewState] = useState<UndoPreviewState>("idle");
   const [undoPreviewError, setUndoPreviewError] = useState<string | null>(null);
   const [previewingHistoryId, setPreviewingHistoryId] = useState<number | null>(null);
+  const [showUndoConfirm, setShowUndoConfirm] = useState(false);
 
   function clearUndoPreview() {
     setUndoPreview(null);
     setUndoPreviewState("idle");
     setUndoPreviewError(null);
     setPreviewingHistoryId(null);
+    setShowUndoConfirm(false);
+  }
+
+  function handleRequestUndoConfirm() {
+    setShowUndoConfirm(true);
+  }
+
+  function handleCancelUndoConfirm() {
+    setShowUndoConfirm(false);
+  }
+
+  function handleConfirmUndo() {
+    // Execution wiring comes in the next lesson — confirmation only for now.
+    setShowUndoConfirm(false);
   }
 
   async function handlePreviewUndo(historyEntryId: number) {
@@ -154,6 +178,7 @@ function App() {
     setUndoPreviewState("loading");
     setUndoPreviewError(null);
     setUndoPreview(null);
+    setShowUndoConfirm(false);
 
     try {
       const preview = await invoke<UndoPreview>("undo_preview", {
@@ -806,7 +831,9 @@ function App() {
               >
                 <h3 id="undo-preview-heading">Undo preview</h3>
                 <p className="panel-hint">
-                  Preview only — no data has been changed.
+                  {showUndoConfirm
+                    ? "Review the change below before confirming."
+                    : "Preview only — no data has been changed yet."}
                 </p>
 
                 {!undoPreview.is_safe_to_undo && (
@@ -816,7 +843,7 @@ function App() {
                   </p>
                 )}
 
-                {undoPreview.is_safe_to_undo && (
+                {undoPreview.is_safe_to_undo && !showUndoConfirm && (
                   <p className="status-message undo-preview-safe">Safe to undo this change.</p>
                 )}
 
@@ -840,6 +867,63 @@ function App() {
                     </dd>
                   </div>
                 </dl>
+
+                {undoPreview.is_safe_to_undo && showUndoConfirm && (
+                  <div
+                    className="undo-confirm-panel"
+                    role="dialog"
+                    aria-labelledby="undo-confirm-heading"
+                    aria-live="polite"
+                  >
+                    <h4 id="undo-confirm-heading">Confirm undo</h4>
+                    <p className="undo-confirm-summary">
+                      Restore <code>{undoPreview.target_column}</code> in{" "}
+                      <code>{undoPreview.table_name}</code> where{" "}
+                      <code>{undoPreview.primary_key_column}</code> is{" "}
+                      <code>{undoPreview.primary_key_value}</code> from{" "}
+                      <strong>{formatCellDisplay(undoPreview.current_value)}</strong> back to{" "}
+                      <strong>{formatCellDisplay(undoPreview.restored_value)}</strong>?
+                    </p>
+                    <p className="undo-confirm-warning">
+                      Undo is another database write. This action will change stored data.
+                    </p>
+                    <div className="undo-confirm-actions">
+                      <button
+                        type="button"
+                        className="undo-confirm-button"
+                        onClick={handleConfirmUndo}
+                      >
+                        Confirm undo
+                      </button>
+                      <button
+                        type="button"
+                        className="undo-confirm-cancel"
+                        onClick={handleCancelUndoConfirm}
+                      >
+                        Back to preview
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="undo-preview-actions">
+                  {undoPreview.is_safe_to_undo && !showUndoConfirm && (
+                    <button
+                      type="button"
+                      className="undo-confirm-button"
+                      onClick={handleRequestUndoConfirm}
+                    >
+                      Confirm undo
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="undo-confirm-cancel"
+                    onClick={clearUndoPreview}
+                  >
+                    Dismiss preview
+                  </button>
+                </div>
               </section>
             )}
           </>
