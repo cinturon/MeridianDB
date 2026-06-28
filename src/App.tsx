@@ -85,6 +85,8 @@ export interface UndoResult {
   target_column: string;
   restored_value: string;
   rows_updated: number;
+  success: boolean;
+  message: string | null;
 }
 
 const DEFAULT_QUERY =
@@ -145,6 +147,9 @@ function App() {
   const [undoPreviewError, setUndoPreviewError] = useState<string | null>(null);
   const [previewingHistoryId, setPreviewingHistoryId] = useState<number | null>(null);
   const [showUndoConfirm, setShowUndoConfirm] = useState(false);
+  const [undoing, setUndoing] = useState(false);
+  const [undoConfirmError, setUndoConfirmError] = useState<string | null>(null);
+  const [undoSuccessMessage, setUndoSuccessMessage] = useState<string | null>(null);
 
   function clearUndoPreview() {
     setUndoPreview(null);
@@ -152,19 +157,67 @@ function App() {
     setUndoPreviewError(null);
     setPreviewingHistoryId(null);
     setShowUndoConfirm(false);
+    setUndoConfirmError(null);
   }
 
   function handleRequestUndoConfirm() {
+    setUndoConfirmError(null);
     setShowUndoConfirm(true);
   }
 
   function handleCancelUndoConfirm() {
     setShowUndoConfirm(false);
+    setUndoConfirmError(null);
   }
 
-  function handleConfirmUndo() {
-    // Execution wiring comes in the next lesson — confirmation only for now.
-    setShowUndoConfirm(false);
+  async function handleConfirmUndo() {
+    if (!undoPreview?.is_safe_to_undo || undoing) {
+      return;
+    }
+
+    const path = databasePath.trim();
+    if (!path) {
+      setUndoConfirmError("Enter a database path before undoing.");
+      return;
+    }
+
+    setUndoing(true);
+    setUndoConfirmError(null);
+    let undoSucceeded = false;
+
+    try {
+      const result = await invoke<UndoResult>("undo_cell", {
+        path,
+        historyEntryId: undoPreview.history_entry_id,
+      });
+      setAffectedRows(result.rows_updated);
+      setUndoSuccessMessage(
+        result.message ??
+          `Restored ${result.target_column} to ${formatCellDisplay(result.restored_value)}.`,
+      );
+      undoSucceeded = true;
+    } catch (error) {
+      const parsed = parseAppError(error);
+      setUndoConfirmError(parsed ? displayAppErrorMessage(parsed) : "Could not undo.");
+    } finally {
+      setUndoing(false);
+    }
+
+    if (!undoSucceeded) {
+      return;
+    }
+
+    clearUndoPreview();
+
+    if (selectedTable) {
+      try {
+        await handleSelectTable(selectedTable);
+      } catch {
+        setPreviewState("error");
+        setPreviewError("Undo succeeded, but the table preview could not be refreshed.");
+      }
+      await loadChangeHistory(path, selectedTable.name);
+    }
   }
 
   async function handlePreviewUndo(historyEntryId: number) {
@@ -179,6 +232,8 @@ function App() {
     setUndoPreviewError(null);
     setUndoPreview(null);
     setShowUndoConfirm(false);
+    setUndoConfirmError(null);
+    setUndoSuccessMessage(null);
 
     try {
       const preview = await invoke<UndoPreview>("undo_preview", {
@@ -323,6 +378,9 @@ function App() {
     }
 
     setSelectedTable(table);
+    if (selectedTable !== null && selectedTable.name !== table.name) {
+      setUndoSuccessMessage(null);
+    }
     setSchemaState("loading");
     setSchemaError(null);
     setTableSchema([]);
@@ -413,6 +471,7 @@ function App() {
     setChangeHistoryState("idle");
     setChangeHistoryError(null);
     clearUndoPreview();
+    setUndoSuccessMessage(null);
 
     try {
       const result = await invoke<TableInfo[]>("list_tables", { path });
@@ -740,6 +799,10 @@ function App() {
             : "Select a table to see edits for that table only."}
         </p>
 
+        {undoSuccessMessage && (
+          <p className="status-message undo-success">{undoSuccessMessage}</p>
+        )}
+
         {changeHistoryState === "idle" && (
           <p className="status-message">
             {tablesState === "success"
@@ -805,7 +868,7 @@ function App() {
                         type="button"
                         className="change-history-preview-button"
                         onClick={() => handlePreviewUndo(entry.id)}
-                        disabled={isPreviewLoading || undoPreviewState === "loading"}
+                        disabled={isPreviewLoading || undoPreviewState === "loading" || undoing}
                         aria-busy={isPreviewLoading}
                       >
                         {isPreviewLoading ? "Previewing…" : "Preview undo"}
@@ -887,18 +950,23 @@ function App() {
                     <p className="undo-confirm-warning">
                       Undo is another database write. This action will change stored data.
                     </p>
+                    {undoConfirmError && (
+                      <p className="status-message error">{undoConfirmError}</p>
+                    )}
                     <div className="undo-confirm-actions">
                       <button
                         type="button"
                         className="undo-confirm-button"
                         onClick={handleConfirmUndo}
+                        disabled={undoing}
                       >
-                        Confirm undo
+                        {undoing ? "Undoing…" : "Confirm undo"}
                       </button>
                       <button
                         type="button"
                         className="undo-confirm-cancel"
                         onClick={handleCancelUndoConfirm}
+                        disabled={undoing}
                       >
                         Back to preview
                       </button>
@@ -920,6 +988,7 @@ function App() {
                     type="button"
                     className="undo-confirm-cancel"
                     onClick={clearUndoPreview}
+                    disabled={undoing}
                   >
                     Dismiss preview
                   </button>
