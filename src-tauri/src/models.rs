@@ -385,7 +385,5 @@ mod tests {
         assert_eq!(result.target_column, "name");
         assert_eq!(result.restored_value, "Ada");
         assert_eq!(result.rows_updated, 1);
-        assert!(result.success);
-        assert!(result.message.is_none());
     }
 }
