@@ -235,13 +235,15 @@ impl Display for CellEditResult {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct ChangeHistoryEntry {
+    pub id: i64,
     pub timestamp: String,
     pub cell_edit_request: CellEditRequest,
 }
 
 impl ChangeHistoryEntry {
-    pub fn new(timestamp: String, cell_edit_request: CellEditRequest) -> Self {
+    pub fn new(id: i64, timestamp: String, cell_edit_request: CellEditRequest) -> Self {
         Self {
+            id,
             timestamp,
             cell_edit_request,
         }
@@ -250,20 +252,21 @@ impl ChangeHistoryEntry {
 
 impl ChangeHistoryEntry {
     pub fn from_row(row: &Row) -> Result<Self, rusqlite::Error> {
-        let new_value: String = row.get(5)?;
-        let original_value: String = row.get(6)?;
+        let new_value: String = row.get(6)?;
+        let original_value: String = row.get(7)?;
 
         let cell_edit_request = CellEditRequest::new(
-            row.get(1)?,
             row.get(2)?,
             row.get(3)?,
             row.get(4)?,
+            row.get(5)?,
             optional_stored_value(new_value),
             optional_stored_value(original_value),
         );
 
         Ok(Self {
-            timestamp: row.get(0)?,
+            id: row.get(0)?,
+            timestamp: row.get(1)?,
             cell_edit_request,
         })
     }

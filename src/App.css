@@ -625,6 +625,86 @@ button:hover:not(:disabled) {
   word-break: break-word;
 }
 
+.change-history-pk {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #cbd5e1;
+}
+
+.change-history-item-active {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35);
+}
+
+.change-history-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+.change-history-preview-button {
+  font-size: 0.8125rem;
+  padding: 0.375rem 0.75rem;
+}
+
+.undo-preview-status {
+  margin-top: 1rem;
+}
+
+.undo-preview-panel {
+  margin-top: 1rem;
+  padding: 1rem 1.125rem;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+
+.undo-preview-panel-unsafe {
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.undo-preview-panel h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  color: #f8fafc;
+}
+
+.undo-preview-safe {
+  margin: 0.75rem 0 0;
+  color: #86efac;
+}
+
+.undo-preview-warning {
+  margin: 0.75rem 0 0;
+}
+
+.undo-preview-values {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin: 0.875rem 0 0;
+}
+
+.undo-preview-values dt {
+  margin: 0 0 0.25rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.undo-preview-values dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875rem;
+  color: #f1f5f9;
+  word-break: break-word;
+}
+
+.undo-preview-values code {
+  font-family: inherit;
+  color: #bfdbfe;
+}
+
 .workbench-panel h2 {
   margin: 0 0 0.5rem;
   font-size: 1.125rem;

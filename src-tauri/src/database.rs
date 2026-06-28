@@ -303,6 +303,7 @@ impl DatabaseService {
 
         if rows_updated > 0 {
             let entry = ChangeHistoryEntry::new(
+                0,
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
@@ -331,7 +332,7 @@ impl DatabaseService {
         };
 
         let sql = format!(
-            "SELECT timestamp, table_name, primary_key_column, primary_key_value, target_column, new_value, original_value
+            "SELECT id, timestamp, table_name, primary_key_column, primary_key_value, target_column, new_value, original_value
              FROM meridian_change_history
              {where_clause}
              ORDER BY id DESC
@@ -488,6 +489,7 @@ impl DatabaseService {
 
         if rows_updated == 1 {
             let entry = ChangeHistoryEntry::new(
+                0,
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
