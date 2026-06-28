@@ -471,8 +471,12 @@ impl DatabaseService {
             "UPDATE \"{escaped_table_name}\" SET \"{escaped_target_column}\" = ? WHERE \"{escaped_primary_key_column}\" = ?"
         );
 
-        let rows_updated = self
+        let transaction = self
             .connection
+            .unchecked_transaction()
+            .map_err(sqlite_err)?;
+
+        let rows_updated = transaction
             .execute(
                 &sql,
                 rusqlite::params![
@@ -482,28 +486,30 @@ impl DatabaseService {
             )
             .map_err(sqlite_err)?;
 
-        if rows_updated != 1 {
+        if rows_updated == 1 {
+            let entry = ChangeHistoryEntry::new(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+                    .to_string(),
+                CellEditRequest::new(
+                    preview.table_name.clone(),
+                    preview.primary_key_column.clone(),
+                    preview.primary_key_value.clone(),
+                    preview.target_column.clone(),
+                    Some(preview.restored_value.clone()),
+                    Some(preview.current_value.clone()),
+                ),
+            );
+            insert_change_history(&transaction, &entry)?;
+            transaction.commit().map_err(sqlite_err)?;
+        } else {
+            transaction.rollback().map_err(sqlite_err)?;
             return Err(AppError::Message(format!(
                 "Expected to update 1 row, but updated {rows_updated}"
             )));
         }
-
-
-        record_change_history(&self.connection, &ChangeHistoryEntry::new(
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                .to_string(),
-            CellEditRequest::new(
-                preview.table_name.clone(),
-                preview.primary_key_column.clone(),
-                preview.primary_key_value.clone(),
-                preview.target_column.clone(),
-                Some(preview.restored_value.clone()),
-                Some(preview.current_value.clone()),
-            ),
-        ))?;
 
         Ok(UndoResult::new(
             preview.history_entry_id,
@@ -1609,5 +1615,37 @@ mod tests {
 
         assert!(database_service.undo_cell(first_history_id).is_err());
         assert_eq!(change_history_count(&database_service), 2);
+    }
+
+    #[test]
+    fn test_undo_cell_rollbacks_cell_update_when_history_insert_fails() {
+        let database_service = in_memory_service_with_notes_row();
+        let request =
+            notes_edit_request_with_value("id", "1", "title", Some("Updated Title".to_string()));
+        database_service.update_cell(&request).unwrap();
+        assert_eq!(change_history_count(&database_service), 1);
+
+        database_service
+            .connection
+            .execute_batch(
+                "CREATE TRIGGER block_undo_history_insert
+                 BEFORE INSERT ON meridian_change_history
+                 FOR EACH ROW
+                 WHEN NEW.new_value = 'Original Title' AND NEW.original_value = 'Updated Title'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'history insert blocked');
+                 END;",
+            )
+            .unwrap();
+
+        let history_entry_id = history_entry_id_for_new_value(&database_service, "Updated Title");
+        let error = database_service.undo_cell(history_entry_id).unwrap_err();
+        assert!(error.to_string().contains("history insert blocked"));
+
+        let current = database_service
+            .read_cell_value("notes", "id", "1", "title")
+            .unwrap();
+        assert_eq!(current, "Updated Title");
+        assert_eq!(change_history_count(&database_service), 1);
     }
 }
