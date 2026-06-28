@@ -9,6 +9,7 @@ use crate::models::QueryResult;
 use crate::models::TableInfo;
 use crate::models::TablePreview;
 use crate::models::UndoPreview;
+use crate::models::UndoResult;
 use rusqlite::Connection;
 use rusqlite::Statement;
 use std::path::PathBuf;
@@ -457,6 +458,45 @@ impl DatabaseService {
         } else {
             Err(AppError::Message(preview.warning_message.unwrap()))
         }
+    }
+
+    pub fn undo_cell(&self, history_entry_id: i64) -> Result<UndoResult, AppError> {
+        let preview = self.validate_undo_safety(history_entry_id)?;
+
+        let escaped_table_name = preview.table_name.replace('"', "\"\"");
+        let escaped_primary_key_column = preview.primary_key_column.replace('"', "\"\"");
+        let escaped_target_column = preview.target_column.replace('"', "\"\"");
+
+        let sql = format!(
+            "UPDATE \"{escaped_table_name}\" SET \"{escaped_target_column}\" = ? WHERE \"{escaped_primary_key_column}\" = ?"
+        );
+
+        let rows_updated = self
+            .connection
+            .execute(
+                &sql,
+                rusqlite::params![
+                    preview.restored_value.as_str(),
+                    preview.primary_key_value.as_str(),
+                ],
+            )
+            .map_err(sqlite_err)?;
+
+        if rows_updated != 1 {
+            return Err(AppError::Message(format!(
+                "Expected to update 1 row, but updated {rows_updated}"
+            )));
+        }
+
+        Ok(UndoResult::new(
+            preview.history_entry_id,
+            preview.table_name,
+            preview.primary_key_column,
+            preview.primary_key_value,
+            preview.target_column,
+            preview.restored_value,
+            rows_updated as i64,
+        ))
     }
 }
 
@@ -1428,5 +1468,49 @@ mod tests {
         let error = database_service.validate_undo_safety(999).unwrap_err();
 
         assert_eq!(error.to_string(), "History entry with id 999 not found");
+    }
+
+    #[test]
+    fn test_undo_cell_restores_original_value_when_safe() {
+        let database_service = in_memory_service_with_notes_row();
+        let request =
+            notes_edit_request_with_value("id", "1", "title", Some("Updated Title".to_string()));
+        database_service.update_cell(&request).unwrap();
+
+        let history_entry_id = history_entry_id_for_new_value(&database_service, "Updated Title");
+        let result = database_service.undo_cell(history_entry_id).unwrap();
+
+        assert_eq!(result.rows_updated, 1);
+        assert!(result.success);
+        assert_eq!(result.restored_value, "Original Title");
+
+        let current = database_service
+            .read_cell_value("notes", "id", "1", "title")
+            .unwrap();
+        assert_eq!(current, "Original Title");
+    }
+
+    #[test]
+    fn test_undo_cell_does_not_update_when_preview_is_stale() {
+        let database_service = in_memory_service_with_notes_row();
+        let first_edit =
+            notes_edit_request_with_value("id", "1", "title", Some("First Update".to_string()));
+        database_service.update_cell(&first_edit).unwrap();
+        let first_history_id = history_entry_id_for_new_value(&database_service, "First Update");
+
+        let second_edit =
+            notes_edit_request_with_value("id", "1", "title", Some("Second Update".to_string()));
+        database_service.update_cell(&second_edit).unwrap();
+
+        let error = database_service.undo_cell(first_history_id).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Cell value changed since this history entry was recorded."
+        );
+
+        let current = database_service
+            .read_cell_value("notes", "id", "1", "title")
+            .unwrap();
+        assert_eq!(current, "Second Update");
     }
 }
