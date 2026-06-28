@@ -488,6 +488,23 @@ impl DatabaseService {
             )));
         }
 
+
+        record_change_history(&self.connection, &ChangeHistoryEntry::new(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                .to_string(),
+            CellEditRequest::new(
+                preview.table_name.clone(),
+                preview.primary_key_column.clone(),
+                preview.primary_key_value.clone(),
+                preview.target_column.clone(),
+                Some(preview.restored_value.clone()),
+                Some(preview.current_value.clone()),
+            ),
+        ))?;
+
         Ok(UndoResult::new(
             preview.history_entry_id,
             preview.table_name,
@@ -1374,6 +1391,15 @@ mod tests {
             .unwrap()
     }
 
+    fn change_history_count(database_service: &DatabaseService) -> i64 {
+        database_service
+            .connection
+            .query_row("SELECT COUNT(*) FROM meridian_change_history", [], |row| {
+                row.get(0)
+            })
+            .unwrap()
+    }
+
     #[test]
     fn test_undo_preview_is_safe_when_cell_matches_history_new_value() {
         let database_service = in_memory_service_with_notes_row();
@@ -1512,5 +1538,76 @@ mod tests {
             .read_cell_value("notes", "id", "1", "title")
             .unwrap();
         assert_eq!(current, "Second Update");
+    }
+
+    #[test]
+    fn test_undo_cell_records_change_history_entry() {
+        let database_service = in_memory_service_with_notes_row();
+        let request =
+            notes_edit_request_with_value("id", "1", "title", Some("Updated Title".to_string()));
+        database_service.update_cell(&request).unwrap();
+        assert_eq!(change_history_count(&database_service), 1);
+
+        let history_entry_id = history_entry_id_for_new_value(&database_service, "Updated Title");
+        database_service.undo_cell(history_entry_id).unwrap();
+        assert_eq!(change_history_count(&database_service), 2);
+
+        let (new_value, original_value): (String, String) = database_service
+            .connection
+            .query_row(
+                "SELECT new_value, original_value
+                 FROM meridian_change_history
+                 ORDER BY id DESC
+                 LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(new_value, "Original Title");
+        assert_eq!(original_value, "Updated Title");
+    }
+
+    #[test]
+    fn test_undo_cell_preserves_original_history_entry() {
+        let database_service = in_memory_service_with_notes_row();
+        let request =
+            notes_edit_request_with_value("id", "1", "title", Some("Updated Title".to_string()));
+        database_service.update_cell(&request).unwrap();
+
+        let original_history_id =
+            history_entry_id_for_new_value(&database_service, "Updated Title");
+        database_service.undo_cell(original_history_id).unwrap();
+
+        let (new_value, original_value): (String, String) = database_service
+            .connection
+            .query_row(
+                "SELECT new_value, original_value
+                 FROM meridian_change_history
+                 WHERE id = ?",
+                [original_history_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(new_value, "Updated Title");
+        assert_eq!(original_value, "Original Title");
+    }
+
+    #[test]
+    fn test_undo_cell_stale_attempt_does_not_record_change_history() {
+        let database_service = in_memory_service_with_notes_row();
+        let first_edit =
+            notes_edit_request_with_value("id", "1", "title", Some("First Update".to_string()));
+        database_service.update_cell(&first_edit).unwrap();
+        let first_history_id = history_entry_id_for_new_value(&database_service, "First Update");
+
+        let second_edit =
+            notes_edit_request_with_value("id", "1", "title", Some("Second Update".to_string()));
+        database_service.update_cell(&second_edit).unwrap();
+        assert_eq!(change_history_count(&database_service), 2);
+
+        assert!(database_service.undo_cell(first_history_id).is_err());
+        assert_eq!(change_history_count(&database_service), 2);
     }
 }
